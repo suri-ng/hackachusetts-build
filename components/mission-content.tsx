@@ -17,7 +17,7 @@ export function MissionContent({ data }: { data: CampaignPayload }) {
   const reward = campaign.basePoints * campaign.pointsMultiplier;
 
   return (
-    <AppShell points={user.pointsBalance} mode={data.mode}>
+    <AppShell points={user.pointsBalance} mode={data.mode} user={user}>
       <div className="page-container mission-page">
         <Link className="back-link" href="/"><Icon name="arrowLeft" size={18} /> Back home</Link>
 

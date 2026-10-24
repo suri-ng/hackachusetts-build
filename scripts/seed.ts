@@ -61,6 +61,8 @@ SUPABASE_SERVICE_ROLE_KEY, then apply schema.sql + functions.sql and rerun:
   const baseRows = await Promise.all([
     supabase.from('demo_user').upsert({
       id: DEMO_IDS.user,
+      username: DEMO_USER.username,
+      auth_user_id: null,
       display_name: DEMO_USER.name,
       first_name: DEMO_USER.firstName,
       initials: DEMO_USER.initials,

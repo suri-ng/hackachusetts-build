@@ -145,7 +145,7 @@ export function HomeClient({ initialData }: { initialData: CampaignPayload }) {
   const { campaign, user } = data;
 
   return (
-    <AppShell points={user.pointsBalance} mode={data.mode}>
+    <AppShell points={user.pointsBalance} mode={data.mode} user={user}>
       <div className="page-container home-page">
         <div className="sr-only" aria-live="polite">{announcement}</div>
         <AnimatePresence>

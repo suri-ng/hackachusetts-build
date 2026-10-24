@@ -22,6 +22,7 @@ export interface CampaignView {
 
 export interface DemoUserView {
   id: string;
+  username: string;
   name: string;
   firstName: string;
   initials: string;

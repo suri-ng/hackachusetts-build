@@ -13,6 +13,9 @@ end $$;
 
 create table if not exists demo_user (
   id               uuid primary key default gen_random_uuid(),
+  auth_user_id     uuid unique references auth.users(id) on delete set null,
+  username         text constraint demo_user_username_format_check
+                     check (username is null or username ~ '^[a-z0-9_]{3,24}$'),
   display_name     text not null,
   first_name       text not null default 'Alex',
   initials         text not null default 'AM',
@@ -84,6 +87,17 @@ create table if not exists known_phash (
 );
 
 -- Upgrade an older Sprout schema in place.
+alter table demo_user add column if not exists auth_user_id uuid references auth.users(id) on delete set null;
+alter table demo_user add column if not exists username text;
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'demo_user_username_format_check'
+  ) then
+    alter table demo_user add constraint demo_user_username_format_check
+      check (username is null or username ~ '^[a-z0-9_]{3,24}$');
+  end if;
+end $$;
 alter table demo_user add column if not exists first_name text not null default 'Alex';
 alter table demo_user add column if not exists initials text not null default 'AM';
 alter table demo_user add column if not exists points_balance int not null default 0;
@@ -109,6 +123,12 @@ alter table submission add column if not exists points_awarded int not null defa
 alter table cafe_coupon add column if not exists detail text not null default 'with any purchase';
 alter table cafe_coupon add column if not exists code text not null default 'SPROUT-DEMO';
 
+create unique index if not exists demo_user_auth_user_idx
+  on demo_user (auth_user_id)
+  where auth_user_id is not null;
+create unique index if not exists demo_user_username_idx
+  on demo_user (username)
+  where username is not null;
 create unique index if not exists known_phash_value_idx on known_phash (phash);
 create index if not exists submission_campaign_completed_idx
   on submission (campaign_id, completed_at desc)
@@ -116,6 +136,65 @@ create index if not exists submission_campaign_completed_idx
 create index if not exists submission_user_pending_idx
   on submission (user_id, committed_at desc)
   where state = 'before_committed';
+
+-- Supabase Auth owns credentials. This trigger creates the matching Sprout
+-- profile and rejects unvalidated usernames even when Auth is called directly.
+create or replace function public.handle_new_sprout_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_username text := lower(trim(coalesce(new.raw_user_meta_data ->> 'username', '')));
+  v_display_name text;
+begin
+  if v_username !~ '^[a-z0-9_]{3,24}$' then
+    raise exception 'invalid_sprout_username';
+  end if;
+
+  v_display_name := initcap(replace(v_username, '_', ' '));
+  insert into public.demo_user (
+    id,
+    auth_user_id,
+    username,
+    display_name,
+    first_name,
+    initials,
+    verified_count,
+    points_balance,
+    actions_completed,
+    coupon_awarded
+  )
+  values (
+    new.id,
+    new.id,
+    v_username,
+    v_display_name,
+    split_part(v_display_name, ' ', 1),
+    upper(left(replace(v_username, '_', ''), 2)),
+    0,
+    0,
+    0,
+    false
+  )
+  on conflict (id) do update set
+    auth_user_id = excluded.auth_user_id,
+    username = excluded.username,
+    display_name = excluded.display_name,
+    first_name = excluded.first_name,
+    initials = excluded.initials;
+
+  return new;
+end;
+$$;
+
+revoke all on function public.handle_new_sprout_user() from public;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute procedure public.handle_new_sprout_user();
 
 alter table demo_user enable row level security;
 alter table campaign enable row level security;

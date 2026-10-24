@@ -50,7 +50,7 @@ export function ImpactClient({ initialData }: { initialData: CampaignPayload }) 
   const estimatedDollars = Math.min(campaign.pool, campaign.pool * campaign.progress / campaign.threshold);
 
   return (
-    <AppShell points={user.pointsBalance} mode={data.mode}>
+    <AppShell points={user.pointsBalance} mode={data.mode} user={user}>
       <div className="page-container impact-page">
         <section className="impact-hero">
           <motion.div className="impact-hero-copy" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}>

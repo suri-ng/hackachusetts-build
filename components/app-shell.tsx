@@ -1,9 +1,12 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { useState } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
-import type { DataMode } from '@/lib/domain';
+import type { DataMode, DemoUserView } from '@/lib/domain';
+import { getBrowserSupabaseClient } from '@/lib/supabase/client';
+import { supabaseAuthConfigured } from '@/lib/supabase/public-config';
 import { Icon, SproutLogo, type IconName } from './icons';
 
 const nav: Array<{ href: string; label: string; icon: IconName }> = [
@@ -17,12 +20,26 @@ export function AppShell({
   children,
   points,
   mode,
+  user,
 }: {
   children: React.ReactNode;
   points: number;
   mode: DataMode;
+  user: Pick<DemoUserView, 'username' | 'initials'>;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
+  const [signingOut, setSigningOut] = useState(false);
+  const authEnabled = supabaseAuthConfigured();
+
+  async function signOut() {
+    const supabase = getBrowserSupabaseClient();
+    if (!supabase || signingOut) return;
+    setSigningOut(true);
+    await supabase.auth.signOut({ scope: 'local' });
+    router.replace('/login');
+    router.refresh();
+  }
   return (
     <div className="app-shell">
       <a className="skip-link" href="#main-content">Skip to content</a>
@@ -48,7 +65,23 @@ export function AppShell({
               <Icon name="leaf" size={17} />
               <strong>{points.toLocaleString()}</strong>
             </Link>
-            <Link href="/impact" className="avatar" aria-label="Open Alex's impact profile">AM</Link>
+            {authEnabled ? (
+              <div className="account-actions">
+                <span className="account-name">@{user.username}</span>
+                <span className="avatar" aria-hidden="true">{user.initials}</span>
+                <button
+                  className="logout-button"
+                  type="button"
+                  onClick={signOut}
+                  disabled={signingOut}
+                  aria-label={`Log out @${user.username}`}
+                >
+                  {signingOut ? 'Leaving…' : 'Log out'}
+                </button>
+              </div>
+            ) : (
+              <Link href="/impact" className="avatar" aria-label="Open impact profile">{user.initials}</Link>
+            )}
           </div>
         </div>
       </header>

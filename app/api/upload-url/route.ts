@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import sharp from 'sharp';
 import { retainUpload } from '@/lib/services';
+import { getRequestIdentity } from '@/lib/supabase/server';
 
 export const runtime = 'nodejs';
 
@@ -21,6 +22,9 @@ const FORMAT_MIME: Record<string, string> = {
 };
 
 export async function POST(request: Request): Promise<NextResponse> {
+  const identity = await getRequestIdentity();
+  if (!identity) return NextResponse.json({ error: 'Log in to continue.' }, { status: 401 });
+
   let form: FormData;
   try {
     form = await request.formData();
@@ -65,7 +69,7 @@ export async function POST(request: Request): Promise<NextResponse> {
       );
     }
 
-    const retained = await retainUpload(bytes, FORMAT_MIME[metadata.format], phase);
+    const retained = await retainUpload(identity, bytes, FORMAT_MIME[metadata.format], phase);
     return NextResponse.json({
       ...retained,
       bytes: bytes.length,

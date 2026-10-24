@@ -236,7 +236,7 @@ export function VerifyClient({
   }
 
   return (
-    <AppShell points={points} mode={result?.dataMode ?? workflowMode}>
+    <AppShell points={points} mode={result?.dataMode ?? workflowMode} user={data.user}>
       <div className="page-container verify-page">
         <div className="verify-topbar">
           <Link className="back-link" href="/mission"><Icon name="arrowLeft" size={18} /> Mission details</Link>

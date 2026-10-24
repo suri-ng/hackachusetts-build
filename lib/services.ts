@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { DEMO_AUTH_IDENTITY, initialsForIdentity, type AuthIdentity } from './auth';
 import {
   attachDemoAfter,
   createDemoPipelineDeps,
@@ -7,7 +8,7 @@ import {
   resetDemoStore,
 } from './demo-store';
 import type { CampaignPayload, DataMode, VerificationResult } from './domain';
-import { runVerification } from './pipeline';
+import { PipelineError, runVerification } from './pipeline';
 import {
   currentDataMode,
   isSupabaseReference,
@@ -20,6 +21,7 @@ import {
   createSupabaseSubmission,
   getSupabaseSnapshot,
   LiveIntegrationError,
+  ResourceOwnershipError,
   uploadEvidenceToSupabase,
 } from './supabase-store';
 
@@ -32,6 +34,25 @@ function fallbackMode(): 'seeded-demo' | 'fallback-demo' {
   return currentDataMode() === 'fallback-demo' ? 'fallback-demo' : 'seeded-demo';
 }
 
+function demoSnapshotFor(
+  identity: AuthIdentity,
+  mode: 'seeded-demo' | 'fallback-demo' = 'seeded-demo',
+): CampaignPayload {
+  const snapshot = getDemoSnapshot(mode);
+  if (identity.id === DEMO_AUTH_IDENTITY.id) return snapshot;
+  return {
+    ...snapshot,
+    user: {
+      ...snapshot.user,
+      id: identity.id,
+      username: identity.username,
+      name: identity.displayName,
+      firstName: identity.displayName.split(' ')[0] || identity.username,
+      initials: initialsForIdentity(identity),
+    },
+  };
+}
+
 function markFailure(error: unknown, defaultService: 'supabase' | 'claude' = 'supabase'): void {
   markLiveServiceFailure(
     error instanceof LiveIntegrationError ? error.service : defaultService,
@@ -39,17 +60,18 @@ function markFailure(error: unknown, defaultService: 'supabase' | 'claude' = 'su
   );
 }
 
-export async function campaignWithFallback(): Promise<CampaignPayload> {
-  if (!shouldUseLiveStack()) return getDemoSnapshot(fallbackMode());
+export async function campaignWithFallback(identity: AuthIdentity): Promise<CampaignPayload> {
+  if (!shouldUseLiveStack()) return demoSnapshotFor(identity, fallbackMode());
   try {
-    return await getSupabaseSnapshot();
+    return await getSupabaseSnapshot(identity);
   } catch (error) {
     markFailure(error);
-    return getDemoSnapshot('fallback-demo');
+    return demoSnapshotFor(identity, 'fallback-demo');
   }
 }
 
 export async function retainUpload(
+  identity: AuthIdentity,
   bytes: Buffer,
   mime: string,
   phase: 'before' | 'after',
@@ -57,7 +79,7 @@ export async function retainUpload(
   if (shouldUseLiveStack()) {
     try {
       return {
-        objectPath: await uploadEvidenceToSupabase(bytes, mime, phase),
+        objectPath: await uploadEvidenceToSupabase(identity.id, bytes, mime, phase),
         mode: 'supabase',
       };
     } catch (error) {
@@ -70,7 +92,10 @@ export async function retainUpload(
   };
 }
 
-export async function commitBeforeWithFallback(beforeRef: string): Promise<{
+export async function commitBeforeWithFallback(
+  identity: AuthIdentity,
+  beforeRef: string,
+): Promise<{
   id: string;
   state: 'before_committed';
   committedAt: string;
@@ -78,8 +103,9 @@ export async function commitBeforeWithFallback(beforeRef: string): Promise<{
 }> {
   if (isSupabaseReference(beforeRef) && shouldUseLiveStack()) {
     try {
-      return await createSupabaseSubmission(beforeRef);
+      return await createSupabaseSubmission(identity, beforeRef);
     } catch (error) {
+      if (error instanceof ResourceOwnershipError) throw error;
       markFailure(error);
       const local = createDemoSubmission(`demo://uploads/before/${randomUUID()}`);
       return { ...local, mode: 'fallback-demo' };
@@ -105,17 +131,19 @@ async function localFallbackVerification(
 }
 
 export async function verifyWithFallback(
+  identity: AuthIdentity,
   submissionId: string,
   afterRef: string,
 ): Promise<VerificationResult> {
   if (isSupabaseReference(afterRef) && shouldUseLiveStack()) {
     try {
-      await attachSupabaseAfter(submissionId, afterRef);
+      await attachSupabaseAfter(identity.id, submissionId, afterRef);
       return await runVerification(
         { submissionId },
-        createSupabasePipelineDeps(),
+        createSupabasePipelineDeps(identity.id),
       );
     } catch (error) {
+      if (error instanceof PipelineError || error instanceof ResourceOwnershipError) throw error;
       markFailure(error, error instanceof LiveIntegrationError ? error.service : 'supabase');
       return localFallbackVerification('fallback-demo');
     }
@@ -134,6 +162,7 @@ export async function verifyWithFallback(
   return localFallbackVerification('fallback-demo');
 }
 
-export function resetLocalDemo(): CampaignPayload {
-  return resetDemoStore();
+export function resetLocalDemo(identity: AuthIdentity): CampaignPayload {
+  resetDemoStore();
+  return demoSnapshotFor(identity);
 }

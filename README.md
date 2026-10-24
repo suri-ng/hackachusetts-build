@@ -6,6 +6,8 @@ Sprout is a Fetch Rewards-style climate action app. Students complete simple loc
 
 ## What works
 
+- Username + password sign-up/login through Supabase Auth with cookie-backed session retention
+- Per-account profiles, points, submissions, and private evidence ownership
 - Real before/after image uploads with decoded-byte, format, dimension, pixel, and 10 MB validation
 - Private evidence retention in Supabase Storage
 - Campaign, user, submission, verdict, points, and coupon persistence in Supabase Postgres
@@ -25,11 +27,11 @@ npm install
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000). With missing credentials, the header shows **Seeded demo** and all state stays in the local server process.
+Open [http://localhost:3000](http://localhost:3000). With missing Supabase credentials, account enforcement is skipped so the seeded demo still works; the header shows **Seeded demo** and all demo state stays in the local server process. Open `/login` to see which account configuration is missing.
 
-## Configure the live Claude + Supabase stack
+## Configure Supabase accounts and the live Claude stack
 
-Sprout activates live mode only when **both** services are configured. It does not expose either server key to the browser.
+Supabase Auth activates as soon as the public Supabase URL/key are present; server-side sign-up also needs the service-role key. Persistent cleanup verification mode still requires both Supabase and Claude. Sprout does not expose either server key to the browser.
 
 ### 1. Create `.env.local`
 
@@ -59,6 +61,8 @@ SPROUT_AI_MODE=auto
 
 Security rules:
 
+- Enable the **Email + Password** provider in Supabase Auth. Sprout maps each normalized username to an internal synthetic email and the server creates it as confirmed, so users never need an email address for this basic flow.
+- `NEXT_PUBLIC_SUPABASE_URL` plus `NEXT_PUBLIC_SUPABASE_ANON_KEY` enable the cookie-backed login gate. `SUPABASE_SERVICE_ROLE_KEY` is also required for sign-up and retained app data.
 - Never prefix `SUPABASE_SERVICE_ROLE_KEY` or `ANTHROPIC_API_KEY` with `NEXT_PUBLIC_`.
 - Never commit `.env.local`; it is ignored by Git.
 - Use a dedicated hackathon/demo Supabase project for the seeded reset.
@@ -71,7 +75,7 @@ In the Supabase SQL editor, run these files in order:
 1. `supabase/schema.sql`
 2. `supabase/functions.sql`
 
-The schema creates the private `cleanup-photos` bucket, tables, indexes, RLS posture, and fields used by the app. The functions file installs restricted service-role RPCs for atomic pass/reject persistence.
+The schema creates the private `cleanup-photos` bucket, tables, indexes, RLS posture, Auth-to-profile trigger, and fields used by the app. The functions file installs restricted service-role RPCs for atomic pass/reject persistence. Reapply `supabase/schema.sql` to an existing Sprout project before testing sign-up so the `username` and `auth_user_id` columns and trigger exist.
 
 ### 3. Seed the live demo
 
@@ -90,6 +94,16 @@ npm run dev
 ```
 
 The header should show **Supabase live**. If it shows **Seeded demo**, configuration is missing or either mode variable is forcing demo. If it shows **Fallback demo**, a configured service failed and Sprout opened its five-minute safety circuit. Fix the service and restart the process to retry immediately.
+
+## Account flow
+
+- When the public Supabase URL/key are configured, `proxy.ts` redirects signed-out page requests to `/login` and refreshes Supabase session cookies.
+- Sign-up accepts a normalized username (`a-z`, `0-9`, `_`) and an 8–72 character password. The server-only route creates a confirmed Supabase Auth user and matching `demo_user` profile.
+- Login uses the same internal username mapping. Supabase Auth stores the password hash; Sprout stores no password or refresh token in application tables.
+- Every app API validates the current Supabase user. Live uploads, submissions, profile reads, points, and verification writes are scoped to that user ID.
+- Log out clears the current browser session. Returning users keep their account and live Supabase data.
+
+This username-only MVP has no password recovery because it does not collect a real email or phone number. Add a verified recovery channel, stronger distributed sign-up rate limiting, and account deletion before public production use. The cookie setup follows the [Supabase Next.js SSR guidance](https://supabase.com/docs/guides/auth/server-side/nextjs), and the request gate uses the [Next.js `proxy.ts` convention](https://nextjs.org/docs/app/api-reference/file-conventions/proxy).
 
 ## Fallback policy
 
@@ -171,6 +185,6 @@ The integration was also manually validated with actual multipart PNG bytes in f
 
 - Sponsor names, offers, coupon, and money are illustrative seeded data; no partnership or redeemability is claimed.
 - No real payment moves in this MVP.
-- Private evidence is sent to Anthropic for analysis when Claude mode is live. A production launch needs explicit consent, retention, and deletion policies.
-- The hardcoded demo user is appropriate for the hackathon, not multi-user production. Add Supabase Auth before public deployment.
+- Username-only accounts intentionally omit password recovery in this MVP; add a verified email/phone recovery channel before production.
+- Private evidence is sent to Anthropic for analysis when Claude mode is live. A production launch needs explicit consent, retention, deletion, and account-abuse policies.
 - AI verification raises the cost of cheating; it does not make photo evidence fraud-proof.

@@ -1,18 +1,23 @@
 import { NextResponse } from 'next/server';
 import { currentDataMode } from '@/lib/runtime-mode';
 import { campaignWithFallback, resetLocalDemo } from '@/lib/services';
+import { getRequestIdentity } from '@/lib/supabase/server';
 
 export const dynamic = 'force-dynamic';
 
 const noStoreHeaders = { 'Cache-Control': 'no-store, max-age=0' };
 
 export async function GET(): Promise<NextResponse> {
-  return NextResponse.json(await campaignWithFallback(), {
+  const identity = await getRequestIdentity();
+  if (!identity) return NextResponse.json({ error: 'Log in to continue.' }, { status: 401 });
+  return NextResponse.json(await campaignWithFallback(identity), {
     headers: noStoreHeaders,
   });
 }
 
 export async function POST(request: Request): Promise<NextResponse> {
+  const identity = await getRequestIdentity();
+  if (!identity) return NextResponse.json({ error: 'Log in to continue.' }, { status: 401 });
   let body: unknown;
   try {
     body = await request.json();
@@ -35,5 +40,5 @@ export async function POST(request: Request): Promise<NextResponse> {
     );
   }
 
-  return NextResponse.json(resetLocalDemo(), { headers: noStoreHeaders });
+  return NextResponse.json(resetLocalDemo(identity), { headers: noStoreHeaders });
 }
