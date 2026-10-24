@@ -1,8 +1,10 @@
 # Sprout — Concept Brief (Working Draft)
 
-> **Status:** Scope locked. Security & anti-fraud layer added to MVP. Implementation started (Next.js scaffold in progress).
+> **Status:** Scope locked. Security & anti-fraud layer added to MVP. 
 > **Event:** One-day hackathon · Energy & Climate Tech track.
 > **Read this first** if you're a teammate (or a teammate's Kiro) joining the project.
+
+> **What's actually in the repo right now:** `SPROUT_CONCEPT.md` (this file) and `README.md`. Nothing else. The earlier Next.js scaffold (`package.json`, `next.config.mjs`, `tsconfig.json`, `vitest.config.ts`, `vitest.setup.ts`) was deleted and has NOT been committed/pushed — it still exists on `origin/main`, so coordinate with the team before the next push. The tech stack in §8 and the security design in §9a are the *intended plan*, not existing code.
 
 ---
 
@@ -187,9 +189,9 @@ The before photo is uploaded and **committed/timestamped FIRST**, before the cle
 
 ---
 
-## 8. Tentative tech stack
+## 8. Tentative tech stack (PLANNED — not yet set up in the repo)
 
-Optimized for one-day speed and demo reliability. Can be simplified further.
+Optimized for one-day speed and demo reliability. Can be simplified further. **None of this is installed yet** — the scaffold that previously added these was removed (see status note at top).
 
 - **Next.js / React** (mobile-first, highly animated)
 - **Supabase** — database, auth, photo storage (RLS + signed upload URLs)
@@ -289,7 +291,8 @@ Both exist; they're the two layers in §5a. No remaining open question here.
 - [x] Security & anti-fraud layer scoped and locked (§9a); EXIF/geo + pHash + server-enforced verdict moved into must-have
 - [x] Must-have vs. mock vs. cut LOCKED (§9) — incl. reject-path handling + hardcoded demo user
 - [x] **Ideation + requirements refinement COMPLETE — ready for Quick Spec / implementation**
-- [x] Implementation started: Next.js scaffold + secure config baseline
+- [ ] ~~Implementation started: Next.js scaffold + secure config baseline~~ — scaffold was removed; repo is back to docs-only. No code yet.
+- [ ] Re-create the Next.js scaffold (or restore it from `origin/main`) when build begins
 - [ ] Complete verification pipeline (pHash, EXIF/geo, Claude, composite verdict, atomic bar increment)
 
-> Scope is agreed. Next action: Quick Spec, then build. The concept brief above is the source of truth for both. The anti-fraud layer lives inside the single Verify flow; the funded progress bar remains the centerpiece.
+> Scope is agreed. Repo currently holds only the two markdown docs (no code). Next action: Quick Spec, then scaffold + build. The concept brief above is the source of truth. The anti-fraud layer lives inside the single Verify flow; the funded progress bar remains the centerpiece.
