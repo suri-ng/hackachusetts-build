@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { PipelineError } from '@/lib/pipeline';
+import { shouldUseLiveStack } from '@/lib/runtime-mode';
 import { verifyWithFallback } from '@/lib/services';
 import { getRequestIdentity } from '@/lib/supabase/server';
 
@@ -9,6 +10,7 @@ export const dynamic = 'force-dynamic';
 type VerifyBody = {
   submissionId?: unknown;
   afterRef?: unknown;
+  aiConsent?: unknown;
 };
 
 export async function POST(request: Request): Promise<NextResponse> {
@@ -31,6 +33,20 @@ export async function POST(request: Request): Promise<NextResponse> {
       !body.afterRef.startsWith('supabase://cleanup-photos/'))
   ) {
     return NextResponse.json({ error: 'Upload an after photo first.' }, { status: 400 });
+  }
+
+  if (
+    body.afterRef.startsWith('supabase://cleanup-photos/') &&
+    shouldUseLiveStack() &&
+    body.aiConsent !== true
+  ) {
+    return NextResponse.json(
+      {
+        error: 'Agree to the AI photo notice before Claude analyzes your photos.',
+        code: 'AI_CONSENT_REQUIRED',
+      },
+      { status: 428 },
+    );
   }
 
   try {

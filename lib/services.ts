@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { DEMO_AUTH_IDENTITY, initialsForIdentity, type AuthIdentity } from './auth';
+import { DEMO_IDS } from './demo-data';
 import {
   attachDemoAfter,
   createDemoPipelineDeps,
@@ -63,7 +64,12 @@ function markFailure(error: unknown, defaultService: 'supabase' | 'claude' = 'su
 export async function campaignWithFallback(identity: AuthIdentity): Promise<CampaignPayload> {
   if (!shouldUseLiveStack()) return demoSnapshotFor(identity, fallbackMode());
   try {
-    return await getSupabaseSnapshot(identity);
+    const snapshot = await getSupabaseSnapshot(identity);
+    // The canonical seed row is a walkthrough fixture, not evidence captured by
+    // this user. Hide it in live mode so connecting keys starts a real photo flow.
+    return snapshot.pendingSubmissionId === DEMO_IDS.pendingSubmission
+      ? { ...snapshot, pendingSubmissionId: '' }
+      : snapshot;
   } catch (error) {
     markFailure(error);
     return demoSnapshotFor(identity, 'fallback-demo');

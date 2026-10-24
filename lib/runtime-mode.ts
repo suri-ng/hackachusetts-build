@@ -36,12 +36,14 @@ export function supabaseConfig(): { url: string; serviceRoleKey: string } | null
   return { url: url.trim(), serviceRoleKey: serviceRoleKey.trim() };
 }
 
+export const DEFAULT_CLAUDE_MODEL = 'claude-haiku-5-5';
+
 export function claudeConfig(): { apiKey: string; model: string } | null {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!usableSecret(apiKey)) return null;
   return {
     apiKey: apiKey.trim(),
-    model: process.env.ANTHROPIC_MODEL?.trim() || 'claude-sonnet-4-5',
+    model: process.env.ANTHROPIC_MODEL?.trim() || DEFAULT_CLAUDE_MODEL,
   };
 }
 

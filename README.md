@@ -9,9 +9,11 @@ Sprout is a Fetch Rewards-style climate action app. Students complete simple loc
 - Username + password sign-up/login through Supabase Auth with cookie-backed session retention
 - Per-account profiles, points, submissions, and private evidence ownership
 - Real before/after image uploads with decoded-byte, format, dimension, pixel, and 10 MB validation
+- Real camera-first before/after prompts with demo fixtures hidden from live submissions
 - Private evidence retention in Supabase Storage
 - Campaign, user, submission, verdict, points, and coupon persistence in Supabase Postgres
-- One Claude multimodal request comparing both photos, with strict `{ confidence, rationale }` parsing
+- A versioned one-time consent notice before any photo is sent to Claude
+- One low-effort Claude Haiku multimodal request comparing both photos, with strict `{ confidence, rationale }` parsing
 - Perceptual-hash duplicate checks plus EXIF location/time soft signals
 - Atomic, idempotent database finalization of progress, points, coupon, hashes, and submission state
 - Automatic local demo fallback when either service is missing or unavailable
@@ -44,9 +46,9 @@ Fill in:
 ```dotenv
 # Anthropic server credentials
 ANTHROPIC_API_KEY=sk-ant-your-key
-# Use a vision-capable model available to your Anthropic account.
-# If omitted, Sprout defaults to claude-sonnet-4-5.
-ANTHROPIC_MODEL=claude-sonnet-4-5
+# Optional override. If omitted, Sprout uses Anthropic's current low-cost,
+# vision-capable Claude Haiku model.
+ANTHROPIC_MODEL=claude-haiku-5-5
 
 # Supabase project settings
 NEXT_PUBLIC_SUPABASE_URL=https://your-project-ref.supabase.co
@@ -124,9 +126,10 @@ SPROUT_AI_MODE=seeded
 
 1. Start at `/` and frame the sponsor problem: organizations get promises and PDFs, not action-level proof.
 2. Open **Do this cleanup** and show the 2× boost and before-first integrity measure.
-3. Continue to `/verify`. Seeded live data includes a before photo already secured; an unseeded project starts at before capture.
-4. Click **Verify my cleanup** to show upload, duplicate, metadata, and Claude comparison stages.
-   - *Say this out loud:* "In live mode the private before/after photos are sent to Anthropic for analysis — a production launch would gate that behind explicit consent, retention, and deletion policies."
+3. Continue to `/verify`.
+   - With live Supabase + Claude credentials, the seeded walkthrough fixture is ignored. Accept the one-time AI notice, then take a real before photo and a real after photo; supported phones open the rear camera.
+   - In local demo mode, use the supplied demo photos. The legitimate path deterministically succeeds and awards points without calling Claude.
+4. Click **Verify my cleanup** to show upload, duplicate, metadata, and Claude Haiku comparison stages. Live analysis sends both private photos in one consent-gated server-side request.
 5. Read the rationale, show +160 points and the café coupon, then click **Watch the funded bar move**.
 6. Open `/impact` to show the retained sponsor proof ledger and Kiro development story.
 7. Optional: open `/verify?scenario=fraud` for the deterministic duplicate + out-of-area rejection. This special judge demo stays local and never touches live sponsor progress.
@@ -187,5 +190,5 @@ The integration was also manually validated with actual multipart PNG bytes in f
 - Sponsor names, offers, coupon, and money are illustrative seeded data; no partnership or redeemability is claimed.
 - No real payment moves in this MVP.
 - Username-only accounts intentionally omit password recovery in this MVP; add a verified email/phone recovery channel before production.
-- Private evidence is sent to Anthropic for analysis when Claude mode is live. A production launch needs explicit consent, retention, deletion, and account-abuse policies.
+- Private evidence is sent to Anthropic for analysis only after the account accepts the versioned, one-time notice on that device. A production launch still needs published retention, deletion, and account-abuse policies.
 - AI verification raises the cost of cheating; it does not make photo evidence fraud-proof.

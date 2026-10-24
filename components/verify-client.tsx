@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ChangeEvent, useRef, useState } from 'react';
+import { ChangeEvent, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import type { CampaignPayload, VerificationResult } from '@/lib/domain';
 import { AppShell } from './app-shell';
@@ -12,9 +12,12 @@ import { Icon, SproutMark, type IconName } from './icons';
 
 type Stage = 'before' | 'after' | 'analyzing' | 'result';
 type SelectedPhoto = { preview: string; name: string; type: string; size: number; file?: Blob };
+type AiConsentStatus = 'not-required' | 'checking' | 'required' | 'accepted';
 
 type UploadResponse = { objectPath?: string; mode?: CampaignPayload['mode']; error?: string };
 type CommitResponse = { id?: string; committedAt?: string; mode?: CampaignPayload['mode']; error?: string };
+
+const AI_CONSENT_VERSION = 'v1';
 
 const analysisSteps: Array<{ title: string; detail: string; icon: IconName }> = [
   { title: 'Securing the upload', detail: 'Checking image type, size, and submission state', icon: 'lock' },
@@ -24,6 +27,10 @@ const analysisSteps: Array<{ title: string; detail: string; icon: IconName }> = 
 ];
 
 const delay = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+
+function aiConsentKey(userId: string): string {
+  return `sprout:ai-photo-consent:${AI_CONSENT_VERSION}:${userId}`;
+}
 
 function friendlyReason(reason: string): { title: string; copy: string; icon: IconName } {
   const reasons: Record<string, { title: string; copy: string; icon: IconName }> = {
@@ -41,37 +48,58 @@ function PhotoPicker({
   onFile,
   onSample,
   fraud,
+  allowSample,
+  disabled,
 }: {
   phase: 'before' | 'after';
   photo: SelectedPhoto | null;
   onFile: (event: ChangeEvent<HTMLInputElement>) => void;
   onSample: () => void;
   fraud: boolean;
+  allowSample: boolean;
+  disabled: boolean;
 }) {
   const inputId = `${phase}-photo-input`;
+  const className = [
+    'photo-picker',
+    photo ? 'has-photo' : '',
+    allowSample ? '' : 'no-sample',
+    disabled ? 'is-disabled' : '',
+  ].filter(Boolean).join(' ');
+
   return (
-    <div className={photo ? 'photo-picker has-photo' : 'photo-picker'}>
+    <div className={className}>
       {photo ? (
         <div className="selected-photo">
           <img src={photo.preview} alt={`${phase === 'before' ? 'Before' : 'After'} cleanup preview`} />
           <div className="selected-photo-overlay">
             <span><Icon name="check" size={16} /> Ready</span>
-            <label htmlFor={inputId}>Choose another</label>
+            <label htmlFor={inputId}>Take another</label>
           </div>
         </div>
       ) : (
-        <label htmlFor={inputId} className="photo-dropzone">
-          <span className="upload-bubble"><Icon name="upload" size={27} /></span>
-          <strong>Add your {phase} photo</strong>
+        <label htmlFor={inputId} className="photo-dropzone" aria-disabled={disabled}>
+          <span className="upload-bubble"><Icon name="camera" size={27} /></span>
+          <strong>Take your {phase} photo</strong>
           <span>JPG, PNG, WebP, or HEIC · up to 10 MB</span>
-          <em>Choose photo</em>
+          <em>{disabled ? 'Accept the AI notice first' : 'Open camera'}</em>
         </label>
       )}
-      <input id={inputId} className="visually-hidden-input" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" onChange={onFile} />
-      <button className="sample-button" type="button" onClick={onSample}>
-        <Icon name={fraud ? 'shield' : 'sparkles'} size={16} />
-        {fraud ? 'Load integrity-test sample' : `Use demo ${phase} photo`}
-      </button>
+      <input
+        id={inputId}
+        className="visually-hidden-input"
+        type="file"
+        accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
+        capture="environment"
+        onChange={onFile}
+        disabled={disabled}
+      />
+      {allowSample && (
+        <button className="sample-button" type="button" onClick={onSample} disabled={disabled}>
+          <Icon name={fraud ? 'shield' : 'sparkles'} size={16} />
+          {fraud ? 'Load integrity-test sample' : `Use demo ${phase} photo`}
+        </button>
+      )}
     </div>
   );
 }
@@ -87,21 +115,33 @@ export function VerifyClient({
 }) {
   const router = useRouter();
   const reduceMotion = useReducedMotion();
+  const initialConsentRequired = !fraudDemo && data.mode === 'supabase' && data.aiMode === 'claude';
+  const consentKey = aiConsentKey(data.user.id);
   const [stage, setStage] = useState<Stage>(startFresh ? 'before' : 'after');
   const [submissionId, setSubmissionId] = useState(
     fraudDemo ? data.fraudSubmissionId : data.pendingSubmissionId,
   );
   const [photo, setPhoto] = useState<SelectedPhoto | null>(
-    startFresh
-      ? null
-      : {
-          preview: fraudDemo ? '/demo-fraud.png' : '/demo-after.png',
-          name: fraudDemo ? 'integrity-test.png' : 'amherst-after.png',
+    fraudDemo
+      ? {
+          preview: '/demo-fraud.png',
+          name: 'integrity-test.png',
           type: 'image/png',
           size: 246_000,
-        },
+        }
+      : startFresh || data.mode === 'supabase'
+        ? null
+        : {
+            preview: '/demo-after.png',
+            name: 'amherst-after.png',
+            type: 'image/png',
+            size: 246_000,
+          },
   );
   const [workflowMode, setWorkflowMode] = useState(data.mode);
+  const [consentStatus, setConsentStatus] = useState<AiConsentStatus>(
+    initialConsentRequired ? 'checking' : 'not-required',
+  );
   const [beforeLockedAt, setBeforeLockedAt] = useState<string | null>(
     startFresh ? null : new Date().toISOString(),
   );
@@ -111,7 +151,38 @@ export function VerifyClient({
   const [busy, setBusy] = useState(false);
   const previewUrl = useRef<string | null>(null);
 
+  useEffect(() => {
+    if (!initialConsentRequired) return;
+    try {
+      setConsentStatus(window.localStorage.getItem(consentKey) ? 'accepted' : 'required');
+    } catch {
+      setConsentStatus('required');
+    }
+  }, [consentKey, initialConsentRequired]);
+
+  const aiConsentAccepted = consentStatus === 'accepted';
+  const livePhotoFlow = !fraudDemo && workflowMode === 'supabase';
+  const photoControlsDisabled = busy || (livePhotoFlow && !aiConsentAccepted);
+  const allowSample = fraudDemo || workflowMode !== 'supabase';
+  const claudeConnected = workflowMode === 'supabase';
   const points = result?.pointsBalance ?? data.user.pointsBalance;
+
+  function acceptAiConsent() {
+    try {
+      window.localStorage.setItem(
+        consentKey,
+        JSON.stringify({ version: AI_CONSENT_VERSION, acceptedAt: new Date().toISOString() }),
+      );
+    } catch {
+      // Consent still applies for this page if browser storage is unavailable.
+    }
+    setConsentStatus('accepted');
+    setError('');
+  }
+
+  function declineAiConsent() {
+    router.push('/mission');
+  }
 
   function chooseFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -137,7 +208,7 @@ export function VerifyClient({
   }
 
   async function reserveUpload(phase: 'before' | 'after'): Promise<string> {
-    if (!photo) throw new Error(`Add a ${phase} photo first.`);
+    if (!photo) throw new Error(`Take a ${phase} photo first.`);
     let file: Blob;
     if (photo.file) {
       file = photo.file;
@@ -156,6 +227,10 @@ export function VerifyClient({
     const payload = (await response.json()) as UploadResponse;
     if (!response.ok || !payload.objectPath) throw new Error(payload.error || 'Could not secure the upload.');
     if (payload.mode) setWorkflowMode(payload.mode);
+    if (payload.mode === 'supabase' && !fraudDemo && !aiConsentAccepted) {
+      setConsentStatus('required');
+      throw new Error('Review the AI photo notice before continuing.');
+    }
     return payload.objectPath;
   }
 
@@ -194,7 +269,11 @@ export function VerifyClient({
       const verificationPromise = fetch('/api/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ submissionId, afterRef }),
+        body: JSON.stringify({
+          submissionId,
+          afterRef,
+          aiConsent: aiConsentAccepted,
+        }),
       });
 
       for (let index = 1; index < analysisSteps.length; index += 1) {
@@ -205,6 +284,7 @@ export function VerifyClient({
 
       const response = await verificationPromise;
       const payload = (await response.json()) as VerificationResult & { error?: string };
+      if (response.status === 428) setConsentStatus('required');
       if (!response.ok) throw new Error(payload.error || 'Verification could not finish.');
       setResult(payload);
       setStage('result');
@@ -226,17 +306,48 @@ export function VerifyClient({
     setResult(null);
     setError('');
     setAnalysisIndex(-1);
-    setPhoto(fraudDemo ? null : {
-      preview: '/demo-after.png',
-      name: 'amherst-after.png',
-      type: 'image/png',
-      size: 246_000,
-    });
+    setPhoto(
+      fraudDemo || (result?.dataMode ?? workflowMode) === 'supabase'
+        ? null
+        : {
+            preview: '/demo-after.png',
+            name: 'amherst-after.png',
+            type: 'image/png',
+            size: 246_000,
+          },
+    );
     setStage('after');
   }
 
   return (
     <AppShell points={points} mode={result?.dataMode ?? workflowMode} user={data.user}>
+      {consentStatus === 'required' && (
+        <div className="ai-consent-backdrop">
+          <section
+            className="ai-consent-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="ai-consent-title"
+            aria-describedby="ai-consent-description"
+          >
+            <span className="ai-consent-icon"><Icon name="sparkles" size={28} /></span>
+            <span className="eyebrow">ONE-TIME AI NOTICE</span>
+            <h2 id="ai-consent-title">Let Claude compare your cleanup photos?</h2>
+            <p id="ai-consent-description">
+              Sprout stores your before-and-after photos as private evidence and sends them from the server to Anthropic&apos;s Claude API to check that the same place was meaningfully cleaned.
+            </p>
+            <div className="ai-consent-detail">
+              <Icon name="lock" size={20} />
+              <span><strong>Your photos are not posted publicly.</strong><small>No photo is sent to Claude until you agree. This notice appears once on this device for your account.</small></span>
+            </div>
+            <div className="ai-consent-actions">
+              <button className="button button-quiet" type="button" onClick={declineAiConsent}>Not now</button>
+              <button className="button button-primary" type="button" onClick={acceptAiConsent} autoFocus>I agree, continue</button>
+            </div>
+          </section>
+        </div>
+      )}
+
       <div className="page-container verify-page">
         <div className="verify-topbar">
           <Link className="back-link" href="/mission"><Icon name="arrowLeft" size={18} /> Mission details</Link>
@@ -258,9 +369,9 @@ export function VerifyClient({
               </div>
               <div className="upload-panel">
                 <div className="upload-panel-head"><div><span className="eyebrow">PHOTO 1 OF 2</span><h2>Before photo</h2></div><span className="required-chip">Required</span></div>
-                <PhotoPicker phase="before" photo={photo} onFile={chooseFile} onSample={loadSample} fraud={false} />
+                <PhotoPicker phase="before" photo={photo} onFile={chooseFile} onSample={loadSample} fraud={false} allowSample={allowSample} disabled={photoControlsDisabled} />
                 {error && <p className="form-error" role="alert">{error}</p>}
-                <button className="button button-primary button-full button-large" type="button" onClick={commitBefore} disabled={!photo || busy}>{busy ? <span className="button-spinner" /> : <Icon name="lock" size={19} />} {busy ? 'Securing photo…' : 'Lock in before photo'}</button>
+                <button className="button button-primary button-full button-large" type="button" onClick={commitBefore} disabled={!photo || photoControlsDisabled}>{busy ? <span className="button-spinner" /> : <Icon name="lock" size={19} />} {busy ? 'Securing photo…' : 'Lock in before photo'}</button>
                 <p className="microcopy">You can return for the after photo whenever the cleanup is done.</p>
               </div>
             </motion.section>
@@ -279,23 +390,23 @@ export function VerifyClient({
                 <span className="comparison-arrow"><Icon name="arrowRight" size={20} /></span>
                 <div className={photo ? 'comparison-photo after-photo ready' : 'comparison-photo after-photo'}>
                   <span className="comparison-label">After {photo ? '· ready' : '· needed'}</span>
-                  {photo ? <img src={photo.preview} alt="Selected after cleanup preview" /> : <span className="empty-photo"><Icon name="camera" size={30} /> Add after photo</span>}
+                  {photo ? <img src={photo.preview} alt="Selected after cleanup preview" /> : <span className="empty-photo"><Icon name="camera" size={30} /> Take after photo</span>}
                 </div>
               </div>
 
               <div className="after-actions-grid">
                 <div className="upload-panel compact-upload">
                   <div className="upload-panel-head"><div><span className="eyebrow">PHOTO 2 OF 2</span><h2>Your after photo</h2></div><span className="required-chip">Required</span></div>
-                  <PhotoPicker phase="after" photo={photo} onFile={chooseFile} onSample={loadSample} fraud={fraudDemo} />
+                  <PhotoPicker phase="after" photo={photo} onFile={chooseFile} onSample={loadSample} fraud={fraudDemo} allowSample={allowSample} disabled={photoControlsDisabled} />
                   {error && <p className="form-error" role="alert">{error}</p>}
-                  <button className={fraudDemo ? 'button button-danger button-full button-large' : 'button button-primary button-full button-large'} type="button" onClick={verifyCleanup} disabled={!photo || busy}>
+                  <button className={fraudDemo ? 'button button-danger button-full button-large' : 'button button-primary button-full button-large'} type="button" onClick={verifyCleanup} disabled={!photo || photoControlsDisabled}>
                     <Icon name={fraudDemo ? 'shield' : 'sparkles'} size={19} /> {fraudDemo ? 'Test this evidence' : 'Verify my cleanup'}
                   </button>
                 </div>
                 <aside className="checks-preview">
                   <span className="eyebrow">WHAT HAPPENS NEXT</span><h2>One tap. Four checks.</h2>
                   {analysisSteps.map((item, index) => <div className="check-preview-item" key={item.title}><span>{index + 1}</span><Icon name={item.icon} size={19} /><div><strong>{item.title}</strong><small>{item.detail}</small></div></div>)}
-                  <div className="assessor-disclosure"><span className="demo-dot" /><span><strong>{data.aiMode === 'claude' ? 'Claude vision connected' : 'Seeded assessor active'}</strong><small>{data.aiMode === 'claude' ? 'Both private images are compared in one server-side request.' : 'Claude automatically takes over when valid credentials are available.'}</small></span></div>
+                  <div className="assessor-disclosure"><span className="demo-dot" /><span><strong>{claudeConnected ? 'Claude Haiku vision connected' : 'Seeded assessor active'}</strong><small>{claudeConnected ? 'With consent, both private images are compared in one server-side request.' : 'Demo submissions receive a seeded successful assessment and points.'}</small></span></div>
                   <Link className={fraudDemo ? 'text-link' : 'fraud-link'} href={fraudDemo ? '/verify' : '/verify?scenario=fraud'}><Icon name="shield" size={16} /> {fraudDemo ? 'Return to legitimate demo' : 'Try the fraud-rejection demo'}</Link>
                 </aside>
               </div>

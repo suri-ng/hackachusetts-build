@@ -343,8 +343,12 @@ button:focus-visible, a:focus-visible, input:focus-visible, label:focus-visible 
 .upload-panel-head h2 { margin: 3px 0 0; font-size: 21px; letter-spacing: -.035em; }
 .required-chip { padding: 6px 9px; background: var(--color-earth-pale); color: var(--color-earth); font-size: 9px; }
 .photo-picker { display: flex; flex-direction: column; }
+.photo-picker.no-sample { margin-bottom: 14px; }
+.photo-picker.is-disabled { opacity: .58; }
+.photo-picker.is-disabled .photo-dropzone, .photo-picker.is-disabled .selected-photo-overlay label { cursor: not-allowed; }
 .photo-dropzone { min-height: 250px; padding: 28px; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 8px; border: 2px dashed #c9cebd; border-radius: 20px; background: var(--color-surface-soft); text-align: center; cursor: pointer; transition: border .2s, background .2s, transform .2s; }
 .photo-dropzone:hover { border-color: var(--color-brand); background: #f5f9ee; transform: translateY(-2px); }
+.photo-picker.is-disabled .photo-dropzone:hover { border-color: #c9cebd; background: var(--color-surface-soft); transform: none; }
 .upload-bubble { width: 59px; height: 59px; margin-bottom: 5px; display: grid; place-items: center; border-radius: 20px; background: var(--color-brand-pale); color: var(--color-brand-deep); }
 .photo-dropzone strong { font-size: 14px; }
 .photo-dropzone > span:not(.upload-bubble) { color: var(--color-ink-soft); font-size: 9px; }
@@ -358,6 +362,17 @@ button:focus-visible, a:focus-visible, input:focus-visible, label:focus-visible 
 .sample-button:hover { background: var(--color-brand-pale); }
 .form-error { margin: -2px 0 12px; padding: 10px 12px; border-radius: 11px; background: var(--color-error-pale); color: #82351f; font-size: 10px; }
 .microcopy { margin: 10px 0 0; text-align: center; color: #848579; font-size: 8px; }
+.ai-consent-backdrop { position: fixed; z-index: 140; inset: 0; padding: 24px; display: grid; place-items: center; overflow-y: auto; background: rgba(32,37,28,.66); backdrop-filter: blur(10px); }
+.ai-consent-dialog { width: min(100%, 520px); padding: 31px; border: 1px solid rgba(255,255,255,.42); border-radius: 28px; background: var(--color-canvas); box-shadow: 0 30px 90px rgba(25,31,20,.32); text-align: left; }
+.ai-consent-icon { width: 58px; height: 58px; margin-bottom: 17px; display: grid; place-items: center; border-radius: 19px; background: var(--color-brand-pale); color: var(--color-brand-deep); }
+.ai-consent-dialog h2 { margin: 7px 0 12px; font-size: 31px; line-height: 1.05; letter-spacing: -.05em; }
+.ai-consent-dialog > p { margin: 0; color: var(--color-ink-soft); font-size: 12px; line-height: 1.65; }
+.ai-consent-detail { margin-top: 19px; padding: 14px; display: flex; align-items: flex-start; gap: 11px; border: 1px solid #d2dfc0; border-radius: 16px; background: var(--color-brand-pale); }
+.ai-consent-detail > svg { flex: 0 0 auto; color: var(--color-brand-deep); }
+.ai-consent-detail > span { display: flex; flex-direction: column; gap: 3px; }
+.ai-consent-detail strong { font-size: 10px; }
+.ai-consent-detail small { color: var(--color-ink-soft); font-size: 8px; line-height: 1.5; }
+.ai-consent-actions { margin-top: 22px; display: flex; justify-content: flex-end; gap: 9px; }
 .button-spinner, .tiny-spinner { border-radius: 50%; border: 2px solid rgba(36,53,22,.24); border-top-color: currentColor; animation: spin .7s linear infinite; }
 .button-spinner { width: 17px; height: 17px; }
 .verify-after-layout { max-width: 1030px; margin: 40px auto 0; }
@@ -664,6 +679,11 @@ button:focus-visible, a:focus-visible, input:focus-visible, label:focus-visible 
   .mission-actions .button { width: 100%; }
   .evidence-card { padding: 20px; flex-direction: column; }
   .verify-topbar .privacy-note { font-size: 0; }
+  .ai-consent-backdrop { padding: 12px; align-items: end; }
+  .ai-consent-dialog { padding: 23px; border-radius: 24px; }
+  .ai-consent-dialog h2 { font-size: 27px; }
+  .ai-consent-actions { flex-direction: column-reverse; }
+  .ai-consent-actions .button { width: 100%; }
   .verify-copy-panel h1 { font-size: 41px; }
   .comparison-label { font-size: 7px; }
   .result-icon { width: 70px; height: 70px; border-radius: 23px; }
