@@ -4,6 +4,8 @@ Climate funding has a last-mile proof problem. Sponsors can fund cleanups and su
 
 **Sprout turns sustainability budgets into verified local impact:** sponsors pledge toward a measurable goal, and progress advances only when a real cleanup is verified.
 
+Our app not only **helps environmental organizations show concrete impact to sponsors hence securing future fundings** but motivates everyday citizens to contribute to environmental services—**and get recognized.**
+
 ### Describe the features and functionality of your Project
 
 Sprout is a rewards app for verified climate action.
