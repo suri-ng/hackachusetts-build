@@ -1,6 +1,6 @@
 # Sprout — Concept Brief (Working Draft)
 
-> **Status:** Ideation locked on direction, scope being finalized. No code yet.
+> **Status:** Scope locked. Security & anti-fraud layer added to MVP. Implementation started (Next.js scaffold in progress).
 > **Event:** One-day hackathon · Energy & Climate Tech track.
 > **Read this first** if you're a teammate (or a teammate's Kiro) joining the project.
 
@@ -84,7 +84,8 @@ The demo centerpiece: **submit → Claude verifies with visible rationale → th
 Being upfront about these builds credibility rather than losing it.
 
 1. **No real money moves in the MVP.** Pledge/escrow is seeded data with a visible "funds released" state. The *mechanic* is the pitch; real payouts (Stripe etc.) are deferred.
-2. **AI verification is assistive, not fraud-proof.** Before/after photos can be staged or reused. Claude gives confidence + rationale and flags obvious mismatches (different location, trash still present, staged). Frame it as "raising the cost of cheating," not "fraud-proof." Metadata/geotag/timestamp checks are an obvious next layer, not built for MVP.
+2. **AI verification is assistive, not fraud-proof.** Before/after photos can be staged or reused. Claude gives confidence + rationale and flags obvious mismatches (different location, trash still present, staged). Frame it as "raising the cost of cheating," not "fraud-proof."
+   **Update:** a scoped anti-fraud layer is now IN the MVP (see section 9a). EXIF/geotag/timestamp is read as a *soft signal* (missing metadata lowers the integrity score but does not auto-reject), combined with perceptual-hash duplicate detection and a server-enforced composite verdict. Still not fraud-proof — it raises the cost of cheating.
 3. **Two-sided marketplace, one actor in the demo.** We seed ONE sponsor campaign and demo from the student's side, with the sponsor's funded bar visible. No sponsor dashboard gets built.
 
 ---
@@ -102,9 +103,12 @@ Being upfront about these builds credibility rather than losing it.
 Optimized for one-day speed and demo reliability. Can be simplified further.
 
 - **Next.js / React** (mobile-first, highly animated)
-- **Supabase** — database, auth, photo storage
-- **Claude multimodal API** — before/after image assessment
-- **Next.js API routes** — backend logic
+- **Supabase** — database, auth, photo storage (RLS + signed upload URLs)
+- **Claude multimodal API** — before/after image assessment (server-side only)
+- **Next.js API routes** — backend logic + server-enforced verification pipeline
+- **sharp + pHash** — perceptual-hash duplicate-photo detection
+- **exifr** — EXIF / GPS / timestamp extraction for the geo/time soft-signal check
+- **Vitest** — unit / component / e2e tests for the verification pipeline
 
 ---
 
@@ -120,11 +124,33 @@ Optimized for one-day speed and demo reliability. Can be simplified further.
 3. **Verify** — upload before + after → Claude assessment with confidence + rationale → accept/reject → animated contribution to the funded bar.
 4. **Impact** — verified cleanups so far, community total, the sponsor's progress toward payout.
 
-**Must-have:** before/after upload, Claude assessment with confidence + rationale, the funded progress bar animation, one seeded sponsor campaign, verified-cleanup history.
+**Must-have:** before/after upload, Claude assessment with confidence + rationale, the funded progress bar animation, one seeded sponsor campaign, verified-cleanup history, plus the anti-fraud layer (section 9a): EXIF/geo soft-signal check, pHash duplicate detection, server-enforced composite verdict + atomic/idempotent bar increment, a seeded staged fraud submission, and platform hardening (server-only keys, storage RLS + signed URLs, upload validation, rate limiting).
 
 **Mock / simplified:** auth (single demo user or magic link), sponsor (seeded, no dashboard), escrow/payout (seeded "pool unlocked" state), XP (secondary signal, not the headline).
 
-**Cut:** leaderboards, badges, levels, streaks, multiple mission types, real payments, EXIF/geo fraud detection, organizer dashboard.
+**Cut:** leaderboards, badges, levels, streaks, multiple mission types, real payments, organizer dashboard. (Note: EXIF/geo fraud detection moved OUT of cut and into the MVP as a scoped soft-signal check — see section 9a.)
+
+---
+
+## 9a. Security & anti-fraud layer (in scope)
+
+Every security feature here strengthens the core differentiator — making the sponsor's dollar provably tied to a real cleanup. All anti-fraud signals live **inside** the Verify step and feed **one combined integrity verdict** shown alongside Claude's rationale. **No new screens**; the funded progress bar stays the centerpiece.
+
+**Three visible anti-fraud checks (in the Verify step):**
+1. **EXIF/geo soft-signal check** — GPS inside the mission area + before/after timestamp proximity. Missing metadata lowers the score but **never auto-rejects** (demo-safe, since phone uploads often strip EXIF).
+2. **Duplicate-photo detection (pHash)** — perceptual-hash every upload; reject photos reused from prior submissions or seeded stock imagery.
+3. **Server-enforced composite verdict** — the bar increments and the pool unlocks **only** when the backend confirms Claude confidence AND the integrity checks. Atomic + idempotent, so no double-counting. Nothing trusts the client:
+   `finalVerdict = f(claudeConfidence, geoScore, timeScore, duplicateFlag)`.
+
+**Invisible platform hardening (no new screens):**
+- Claude API key server-side only (never in the client bundle)
+- Supabase storage access control / RLS + signed upload URLs
+- Upload input validation (file type, size)
+- Submission rate limiting
+
+**Pipeline order (one `POST /api/verify`):** input validation (type/size + rate limit) → pHash duplicate check → EXIF/geo/time extract + score → Claude multimodal assess → composite verdict → if pass: atomic idempotent bar increment → threshold check → "pool unlocked" state; if fail: reject with reasons.
+
+**Demo moment:** a seeded **reused + out-of-area** "fraud attempt" is visibly caught and rejected on stage (flagged by duplicate + geo), while a legit cleanup is accepted and moves the funded bar.
 
 ---
 
@@ -135,7 +161,7 @@ Optimized for one-day speed and demo reliability. Can be simplified further.
 - **Option A — Real seeded reward:** hitting the threshold unlocks a tangible shop discount/coupon shown as a card (seeded, not actually redeemable). Pro: tangible payoff, plants the business model. Con: extra surface.
 - **Option B — Abstract payout:** threshold hit shows a "reward pool unlocked / funds released to cleanup effort" state. Pro: simpler, keeps focus on the escrow mechanic. Con: less tangible.
 
-**Decision pending — flag for team discussion.**
+**Decision pending — flag for team discussion.** (Current build assumes **Option B / abstract "pool unlocked"** state until decided.)
 
 ---
 
@@ -152,9 +178,11 @@ Optimized for one-day speed and demo reliability. Can be simplified further.
 
 - [x] Direction chosen: sponsor-funded verified-cleanup escrow
 - [x] Demo hero chosen: sponsor
-- [ ] Resolve open question (real reward vs. abstract payout)
+- [x] Security & anti-fraud layer scoped and locked (see section 9a)
+- [x] Must-have vs. mock vs. cut locked (security moved into must-have)
+- [x] Implementation started: Next.js scaffold + secure config baseline
+- [ ] Resolve open question (real reward vs. abstract payout — build assumes Option B for now)
 - [ ] Finalize minimum screens + exact end-to-end journey
-- [ ] Lock must-have vs. mock vs. cut
-- [ ] Then: Quick Spec / implementation (NOT before the above)
+- [ ] Complete verification pipeline (pHash, EXIF/geo, Claude, composite verdict, bar increment)
 
-> Still in ideation + requirements refinement. No code, files, implementation plans, or Quick Specs until scope is agreed.
+> Scope agreed and implementation underway. The anti-fraud layer is built inside the single Verify flow; the funded progress bar remains the centerpiece.
