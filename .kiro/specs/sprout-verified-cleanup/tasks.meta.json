@@ -1,0 +1,60 @@
+{
+  "pbtResults": {},
+  "executionHistory": {
+    "1. Recreate the Next.js / TypeScript / Supabase / Vitest scaffold": [
+      {
+        "executionId": "c756e9c3-1f3d-4c4c-b78a-c6d618a82a42",
+        "chatSessionId": "sess_4cbc6906-1e2a-431c-8e78-66a31e4cc300",
+        "timestamp": 1792868387427
+      },
+      {
+        "executionId": "c756e9c3-1f3d-4c4c-b78a-c6d618a82a42",
+        "chatSessionId": "sess_4cbc6906-1e2a-431c-8e78-66a31e4cc300",
+        "timestamp": 1792869036416
+      }
+    ],
+    "2.1 Write `supabase/schema.sql` with tables and RLS": [
+      {
+        "executionId": "c756e9c3-1f3d-4c4c-b78a-c6d618a82a42",
+        "chatSessionId": "sess_4cbc6906-1e2a-431c-8e78-66a31e4cc300",
+        "timestamp": 1792869039906
+      },
+      {
+        "executionId": "c756e9c3-1f3d-4c4c-b78a-c6d618a82a42",
+        "chatSessionId": "sess_4cbc6906-1e2a-431c-8e78-66a31e4cc300",
+        "timestamp": 1792869239187
+      }
+    ],
+    "2.2 Write `supabase/functions.sql` with `increment_progress(p_submission_id)`": [
+      {
+        "executionId": "c756e9c3-1f3d-4c4c-b78a-c6d618a82a42",
+        "chatSessionId": "sess_4cbc6906-1e2a-431c-8e78-66a31e4cc300",
+        "timestamp": 1792869243197
+      },
+      {
+        "executionId": "c756e9c3-1f3d-4c4c-b78a-c6d618a82a42",
+        "chatSessionId": "sess_4cbc6906-1e2a-431c-8e78-66a31e4cc300",
+        "timestamp": 1792869442297
+      }
+    ],
+    "2.3 Write resettable `supabase/seed.sql`": [
+      {
+        "executionId": "c756e9c3-1f3d-4c4c-b78a-c6d618a82a42",
+        "chatSessionId": "sess_4cbc6906-1e2a-431c-8e78-66a31e4cc300",
+        "timestamp": 1792869244155
+      },
+      {
+        "executionId": "c756e9c3-1f3d-4c4c-b78a-c6d618a82a42",
+        "chatSessionId": "sess_4cbc6906-1e2a-431c-8e78-66a31e4cc300",
+        "timestamp": 1792869442891
+      }
+    ],
+    "2. Supabase data layer: schema, RLS, storage, atomic increment, resettable seed": [
+      {
+        "executionId": "c756e9c3-1f3d-4c4c-b78a-c6d618a82a42",
+        "chatSessionId": "sess_4cbc6906-1e2a-431c-8e78-66a31e4cc300",
+        "timestamp": 1792869443051
+      }
+    ]
+  }
+}

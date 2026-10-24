@@ -1,0 +1,59 @@
+/*
+ * Sprout design tokens — single source of truth for the palette.
+ * Sourced from .kiro/steering/design-system.md. Components MUST reference these
+ * variables by role, never raw hex, so derived semantics can be swapped later.
+ */
+
+:root {
+  /* Lights */
+  --color-surface: #ffffff; /* app background, cards, primary surfaces */
+  --color-muted: #cacfcb; /* borders, dividers, disabled, unfilled progress track */
+  --color-brand: #84a258; /* Sprout green — primary brand + success/verified accent */
+
+  /* Darks */
+  --color-ink: #332923; /* primary text, headings */
+  --color-ink-soft: #44472f; /* secondary text, dark surfaces */
+  --color-earth: #7d5f49; /* warm accent — sponsor, secondary buttons, coupon card */
+
+  /* Semantic (derived — not team-provided; see steering DECISION FLAG) */
+  --color-success: var(--color-brand); /* pass / verified / bar fill */
+  --color-error: #b3482f; /* reject / error — warm red, harmonizes with palette */
+  --color-warning: #c8852f; /* "almost there" / warning — muted amber */
+
+  /* Role aliases for convenience */
+  --color-bar-track: var(--color-muted);
+  --color-bar-fill: var(--color-brand);
+  --color-text: var(--color-ink);
+  --color-text-soft: var(--color-ink-soft);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
+  /* Mobile-first: design at phone width first. */
+  -webkit-text-size-adjust: 100%;
+}
+
+/* Respect reduced-motion for the funded-bar / coupon animations added later. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
