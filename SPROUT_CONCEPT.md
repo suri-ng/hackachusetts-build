@@ -60,10 +60,16 @@ Two-sided, but we pick a hero for the demo.
 Sponsor pledges pool toward a goal (e.g. $500 for 100 verified cleanups)
         │
         ▼
-Student picks a cleanup mission → cleans a real area
+Student picks a cleanup mission
         │
         ▼
-Uploads BEFORE + AFTER photos
+Uploads BEFORE photo FIRST → it is committed + timestamped (submission now "pending")
+        │
+        ▼
+Student cleans the area, then returns
+        │
+        ▼
+Uploads AFTER photo → submission is complete → sent to Claude
         │
         ▼
 Claude verifies: is it the same spot? is trash actually gone? staged/faked?
@@ -130,11 +136,53 @@ Being upfront about these builds credibility rather than losing it.
 
 ---
 
+## 6a. Screens & demo journey
+
+### Hero vs. instrument (resolves the "sponsor hero + student phone" tension)
+The **sponsor is the hero of the NARRATIVE**; the **student phone is the INSTRUMENT** that proves it. Open and close the demo on the sponsor's funded campaign (their money, goal, proof trail). In the middle, pick up the student phone to show *how a verified cleanup is created*, then cut back to the sponsor's bar moving. The student flow exists to make the sponsor's proof tangible — not to be the star.
+
+### Screens (4, mobile-first)
+
+1. **Campaign Home (hero screen)** — sponsor name/logo, the pledge ("$500, unlocks at 100 verified cleanups"), the **funded progress bar** with milestone markers (25/50/75/100) and "$X of $500 unlocked," a live "latest verified cleanups" feed, and the primary CTA **"Verify a cleanup."** Demo starts and ends here.
+2. **Mission Detail** — what to do, what to photograph (before + after of the same spot), the sponsor, what your cleanup contributes. CTA → Verify.
+3. **Verify (the engine) — TWO states:**
+   - **State A (Before):** "Upload your before photo to start." Upload → "Before locked in at 2:14pm. Go clean, then come back." Submission becomes `before_committed` (pending).
+   - **State B (After):** returning to a pending submission → "Upload your after photo" → submit → Claude verifies before+after together → **confidence + one-line rationale shown either way** → on pass: success animation + personal café coupon unlocks → hands back to Home where the funded bar ticks up.
+4. **Impact / Proof trail** — your verified cleanups, the community total, the sponsor's progress toward payout, framed as the **credible proof trail a sponsor gets instead of a PDF.** This screen sells the sponsor value even though a student holds the phone.
+
+### End-to-end demo script
+1. **Open on Campaign Home.** "MASSPIRG pledged $500, released only when 100 cleanups are *verified*. They're at 37, $185 unlocked — all backed by before/after proof, not a report." (Sponsor = hero in 10s.)
+2. **Tap "Verify a cleanup" → Mission Detail → Verify.** Pick up the student-phone framing: "Here's how a cleanup becomes proof."
+3. **Before-first:** show the before already locked in (see demo trick below), describe the go-clean-and-return step verbally.
+4. **Upload the after → submit.**
+5. **Claude returns confidence + rationale** read aloud ("same spot, trash removed, not staged — 0.91, verified"). This preempts the fraud question by *showing* the assistive check.
+6. **The hero moment fires:** success animation → **personal café coupon pops** (student reward) → cut back to **Campaign Home** where the **funded bar animates 37 → 38** and dollars unlocked tick up (sponsor proof).
+7. **Tap Impact.** "This is what the sponsor actually buys — a live, verifiable proof trail. The $500-check-and-a-PDF world can't give them this."
+
+Open on sponsor, close on sponsor. Student flow is the bridge.
+
+### The single most impressive demo moment
+**Step 6:** the instant Claude's rationale returns and the funded bar climbs with real dollars unlocking while the coupon pops. Money-meets-proof in one animated beat. **All polish budget goes here.**
+
+### Seeded "before already committed" demo trick
+Because the two-step flow has a real-world gap (go clean, come back), seed ONE submission already in the `before_committed` state. On stage you only upload the after and trigger verification — no awkward "imagine time passed." Describe the before-first step while showing it; complete it live.
+
+### Scope fallback
+Four screens + Claude + Supabase + a genuinely polished animated bar is a full one-day build. If time gets tight, **cut the Impact screen (#4) first** — fold its "proof trail" content into Campaign Home. **Never** cut the funded-bar animation; that *is* the product. Ship 3 beautiful screens over 4 rough ones.
+
+---
+
 ## 7. What verification can and can't prove
 
 - **Can reasonably assess:** a littered area in the "before," a visibly cleaner same-looking area in the "after," gross mismatches, obviously staged/stock imagery.
 - **Can't prove from photos alone:** exact location truth, timestamp truth, that the same person did both, that trash wasn't just moved out of frame. (Future: EXIF/geotag/timestamp.)
 - **Mission choice reflects this:** we deliberately pick **litter cleanup of a defined area (before/after)** because the photo genuinely *is* the evidence — unlike "turned off lights" or "biked to class," which a photo can't confirm.
+
+### Two-step "before-first" commit (anti-staging measure)
+The before photo is uploaded and **committed/timestamped FIRST**, before the cleanup happens. The after is uploaded only after the student returns. This raises the cost of the classic staging scam (find a clean spot → dump trash → shoot "before" → remove your own trash → shoot "after"), because the before is locked in up front rather than fabricated after the fact alongside the after.
+- **Honest framing (say it this way):** "Committing the before first raises the cost of staging. It is NOT fraud-proof — timestamp / geolock / same-device checks are the next layer." Do not claim this prevents fraud; it just makes cheating harder.
+- **What it does NOT prove:** location continuity (before at spot A, after at spot B) or that the same mess was actually cleaned. Still assistive, not conclusive.
+- **Submission gains state:** a submission is now either `before_committed` (awaiting after) or `complete`. This is the only new data concept the feature adds — no new screen, no change to the Claude/escrow logic.
 
 ---
 
@@ -149,23 +197,36 @@ Optimized for one-day speed and demo reliability. Can be simplified further.
 
 ---
 
-## 9. Proposed MVP scope (to be finalized)
+## 9. MVP scope — FINALIZED
 
 **Mission type:** ONE — litter cleanup of a defined area, before/after photos.
 
 **Hero of demo:** Sponsor (campaign funded by a seeded sponsor, shown from student capture side).
 
-**Likely screens (tentative, ~4):**
-1. **Home / Campaign** — the sponsor's funded progress bar (hero), goal + threshold, community progress, a "verify a cleanup" CTA.
-2. **Mission detail** — instructions, what to photograph (before/after), the sponsor, the reward pool.
-3. **Verify** — upload before + after → Claude assessment with confidence + rationale → accept/reject → animated contribution to the funded bar.
-4. **Impact** — verified cleanups so far, community total, the sponsor's progress toward payout.
+**Screens (4):** see §6a for the full breakdown + demo script.
+1. **Campaign Home** — sponsor's funded progress bar (hero), goal/threshold, milestone markers, community feed, "verify a cleanup" CTA.
+2. **Mission Detail** — instructions, what to photograph (before/after), the sponsor, the reward pool.
+3. **Verify (two states)** — State A: commit BEFORE first (locked + timestamped). State B: upload AFTER → Claude assessment with confidence + rationale → pass → coupon + animated contribution to the funded bar.
+4. **Impact / proof trail** — verified cleanups, community total, sponsor's progress toward payout. (First to cut if time-constrained — fold into Campaign Home.)
 
-**Must-have:** before/after upload, Claude assessment with confidence + rationale, the funded progress bar animation, one seeded sponsor campaign, verified-cleanup history.
+### Must-have (the demo breaks without these)
+- Two-step **before-first / after** upload with submission state (`before_committed` → `complete`).
+- **Claude assessment** returning confidence + one-line rationale on both pass AND reject.
+- **Reject / low-confidence path handled gracefully** — show the rationale, do NOT advance the funded bar, let the user retry. (Critical: protects the demo if a judge uploads a bad/fake photo.)
+- **Funded progress bar animation** (the hero moment — gets the polish budget).
+- **One seeded sponsor campaign** (pool, threshold, current progress, milestone markers).
+- **Personal milestone café coupon** firing on the first verified cleanup.
+- **Verified-cleanup history** (feeds the community feed + Impact/proof trail).
+- **Seeded `before_committed` submission** so the live demo starts mid-flow.
 
-**Mock / simplified:** auth (single demo user or magic link), sponsor (seeded, no dashboard), escrow/payout (seeded "pool unlocked" state), XP (secondary signal, not the headline).
+### Mock / simplified
+- **Auth → hardcoded demo user, no real login** (primary choice; magic link is a stretch goal only — avoid email/deliverability risk on demo day).
+- **Sponsor → seeded, no dashboard** (demoed from the student side).
+- **Escrow / payout → seeded "pool unlocked" state** (no real money, no Stripe).
+- **XP → secondary signal, not the headline** (optional to show at all).
 
-**Cut:** leaderboards, badges, levels, streaks, multiple mission types, real payments, EXIF/geo fraud detection, organizer dashboard.
+### Cut entirely
+Leaderboards, badges, levels, streaks, multiple mission types, real payments, EXIF/geo fraud detection, organizer dashboard, magnitude/tier scoring, real redeemable coupon codes.
 
 ---
 
@@ -196,8 +257,9 @@ Both exist; they're the two layers in §5a. No remaining open question here.
 - [x] Demo hero chosen: sponsor
 - [x] Reward model decided: communal funded bar + personal milestone café coupon; binary 1-cleanup-1-unit, no tiers
 - [x] Reward real-vs-abstract question resolved: real (seeded) coupon, delivered early
-- [ ] Finalize minimum screens + exact end-to-end journey
-- [ ] Lock must-have vs. mock vs. cut
-- [ ] Then: Quick Spec / implementation (NOT before the above)
+- [x] Two-step before-first/after verification flow decided (anti-staging)
+- [x] Screens + end-to-end demo journey finalized (§6a): 4 screens, sponsor-hero/student-instrument, hero moment = step 6
+- [x] Must-have vs. mock vs. cut LOCKED (§9) — incl. reject-path handling + hardcoded demo user
+- [x] **Ideation + requirements refinement COMPLETE — ready for Quick Spec / implementation**
 
-> Still in ideation + requirements refinement. No code, files, implementation plans, or Quick Specs until scope is agreed.
+> Scope is agreed. Next action: Quick Spec, then build. The concept brief above is the source of truth for both.
