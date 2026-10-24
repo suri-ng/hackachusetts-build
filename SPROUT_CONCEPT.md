@@ -60,22 +60,69 @@ Two-sided, but we pick a hero for the demo.
 Sponsor pledges pool toward a goal (e.g. $500 for 100 verified cleanups)
         │
         ▼
-Student picks a cleanup mission → cleans a real area
+Student picks a cleanup mission
         │
         ▼
-Uploads BEFORE + AFTER photos
+Uploads BEFORE photo FIRST → it is committed + timestamped (submission now "pending")
+        │
+        ▼
+Student cleans the area, then returns
+        │
+        ▼
+Uploads AFTER photo → submission is complete → sent to Claude
         │
         ▼
 Claude verifies: is it the same spot? is trash actually gone? staged/faked?
         │  (returns confidence score + one-line rationale)
         ▼
-Verified cleanup fills the sponsor's FUNDED progress bar
+Verified cleanup → 2 things happen at once:
+   • COMMUNAL: sponsor's funded bar ticks up toward the threshold
+   • PERSONAL: student unlocks a milestone reward (e.g. café coupon)
         │
         ▼
 Threshold hit → "reward pool unlocked" moment
 ```
 
-The demo centerpiece: **submit → Claude verifies with visible rationale → the sponsor's funded bar ticks up → threshold hit → pool unlocked.**
+The demo centerpiece: **submit → Claude verifies with visible rationale → the student gets a real coupon AND the sponsor's funded bar ticks up → (eventually) threshold hit → pool unlocked.**
+
+---
+
+## 5a. Reward system (how points/thresholds/coupons actually work)
+
+There are **two layers** of reward, and they're deliberately kept separate:
+
+### Layer 1 — Communal funded bar (the SPONSOR story)
+- A sponsor makes a **conditional pledge** defined by three numbers:
+  - **Pool** — money/value the sponsor puts up (e.g. **$500**).
+  - **Threshold (goal)** — how many verified cleanups unlock it (e.g. **100**).
+  - **Progress** — verified cleanups so far (e.g. **37 / 100**).
+- The **funded bar** = `progress ÷ threshold`, framed in the sponsor's money so it feels like real stakes.
+- **Binary counting: 1 verified cleanup = 1 unit.** No magnitude scoring, no small-vs-big weighting. (See note below on why.)
+- **Milestone markers** sit on the bar at 25 / 50 / 75 / 100 so there's always a near-term goal, not just one distant payout.
+
+```
+MASSPIRG — Clean Amherst Commons
+$500 reward pool · unlocks at 100 verified cleanups
+
+[██████████░░░░░░░░░░░░░░░░░░]  37 / 100 verified
+$185 of $500 unlocked      next milestone: 50
+```
+
+### Layer 2 — Personal milestone coupons (the STUDENT payoff)
+- Tied to **your own** verified-cleanup count, not the community's.
+- **1st verified cleanup → a real (seeded) local café coupon.** This is the tangible payoff that makes the loop satisfying.
+- A later personal milestone shows a slightly better perk as a "keep going" carrot.
+- The communal bar (Layer 1) still ticks up in parallel from the same single action — so one cleanup produces both a personal reward and communal progress.
+
+### Why ONE system, no tiers
+We are NOT building small-task vs. big-task reward tiers for the MVP. Tiering would force Claude to *estimate magnitude* ("how much trash was removed?"), which is far less reliable than a binary "cleaned: yes/no," and it invites gaming and balancing headaches. Keeping it binary also gives the sponsor clean unit economics ("$500 → 100 verified cleanups = $5 each, here's the proof"). 
+- **Say this in the pitch:** "Every verified cleanup counts as one unit today; weighting cleanups by assessed magnitude is the deliberate next version." That reads as maturity, not a gap.
+
+### What the small reward is
+**A local café coupon** (e.g. "$1 off" or "free drip coffee with any purchase"). Chosen because: coffee is the universal student currency, it's believable as a real local-shop offer, it reinforces the "local shops benefit" side of the pitch, and it renders beautifully as a seeded coupon card. It is **seeded/mocked** (not a real redeemable code) — say so in the pitch.
+
+### Demo rule for rewards
+Make the **first milestone reachable in a single cleanup**, so the demo shows the full loop (clean → verify → coupon unlocked) without faking 25 submissions. The bigger milestones (25/50/100) appear as visible markers on the bar for the story, but only the first one needs to fire live.
 
 ---
 
@@ -90,11 +137,53 @@ Being upfront about these builds credibility rather than losing it.
 
 ---
 
+## 6a. Screens & demo journey
+
+### Hero vs. instrument (resolves the "sponsor hero + student phone" tension)
+The **sponsor is the hero of the NARRATIVE**; the **student phone is the INSTRUMENT** that proves it. Open and close the demo on the sponsor's funded campaign (their money, goal, proof trail). In the middle, pick up the student phone to show *how a verified cleanup is created*, then cut back to the sponsor's bar moving. The student flow exists to make the sponsor's proof tangible — not to be the star.
+
+### Screens (4, mobile-first)
+
+1. **Campaign Home (hero screen)** — sponsor name/logo, the pledge ("$500, unlocks at 100 verified cleanups"), the **funded progress bar** with milestone markers (25/50/75/100) and "$X of $500 unlocked," a live "latest verified cleanups" feed, and the primary CTA **"Verify a cleanup."** Demo starts and ends here.
+2. **Mission Detail** — what to do, what to photograph (before + after of the same spot), the sponsor, what your cleanup contributes. CTA → Verify.
+3. **Verify (the engine) — TWO states:**
+   - **State A (Before):** "Upload your before photo to start." Upload → "Before locked in at 2:14pm. Go clean, then come back." Submission becomes `before_committed` (pending).
+   - **State B (After):** returning to a pending submission → "Upload your after photo" → submit → Claude verifies before+after together → **confidence + one-line rationale shown either way** → on pass: success animation + personal café coupon unlocks → hands back to Home where the funded bar ticks up.
+4. **Impact / Proof trail** — your verified cleanups, the community total, the sponsor's progress toward payout, framed as the **credible proof trail a sponsor gets instead of a PDF.** This screen sells the sponsor value even though a student holds the phone.
+
+### End-to-end demo script
+1. **Open on Campaign Home.** "MASSPIRG pledged $500, released only when 100 cleanups are *verified*. They're at 37, $185 unlocked — all backed by before/after proof, not a report." (Sponsor = hero in 10s.)
+2. **Tap "Verify a cleanup" → Mission Detail → Verify.** Pick up the student-phone framing: "Here's how a cleanup becomes proof."
+3. **Before-first:** show the before already locked in (see demo trick below), describe the go-clean-and-return step verbally.
+4. **Upload the after → submit.**
+5. **Claude returns confidence + rationale** read aloud ("same spot, trash removed, not staged — 0.91, verified"). This preempts the fraud question by *showing* the assistive check.
+6. **The hero moment fires:** success animation → **personal café coupon pops** (student reward) → cut back to **Campaign Home** where the **funded bar animates 37 → 38** and dollars unlocked tick up (sponsor proof).
+7. **Tap Impact.** "This is what the sponsor actually buys — a live, verifiable proof trail. The $500-check-and-a-PDF world can't give them this."
+
+Open on sponsor, close on sponsor. Student flow is the bridge.
+
+### The single most impressive demo moment
+**Step 6:** the instant Claude's rationale returns and the funded bar climbs with real dollars unlocking while the coupon pops. Money-meets-proof in one animated beat. **All polish budget goes here.**
+
+### Seeded "before already committed" demo trick
+Because the two-step flow has a real-world gap (go clean, come back), seed ONE submission already in the `before_committed` state. On stage you only upload the after and trigger verification — no awkward "imagine time passed." Describe the before-first step while showing it; complete it live.
+
+### Scope fallback
+Four screens + Claude + Supabase + a genuinely polished animated bar is a full one-day build. If time gets tight, **cut the Impact screen (#4) first** — fold its "proof trail" content into Campaign Home. **Never** cut the funded-bar animation; that *is* the product. Ship 3 beautiful screens over 4 rough ones.
+
+---
+
 ## 7. What verification can and can't prove
 
 - **Can reasonably assess:** a littered area in the "before," a visibly cleaner same-looking area in the "after," gross mismatches, obviously staged/stock imagery.
 - **Can't prove from photos alone:** exact location truth, timestamp truth, that the same person did both, that trash wasn't just moved out of frame. (Future: EXIF/geotag/timestamp.)
 - **Mission choice reflects this:** we deliberately pick **litter cleanup of a defined area (before/after)** because the photo genuinely *is* the evidence — unlike "turned off lights" or "biked to class," which a photo can't confirm.
+
+### Two-step "before-first" commit (anti-staging measure)
+The before photo is uploaded and **committed/timestamped FIRST**, before the cleanup happens. The after is uploaded only after the student returns. This raises the cost of the classic staging scam (find a clean spot → dump trash → shoot "before" → remove your own trash → shoot "after"), because the before is locked in up front rather than fabricated after the fact alongside the after.
+- **Honest framing (say it this way):** "Committing the before first raises the cost of staging. It is NOT fraud-proof — timestamp / geolock / same-device checks are the next layer." Do not claim this prevents fraud; it just makes cheating harder.
+- **What it does NOT prove:** location continuity (before at spot A, after at spot B) or that the same mess was actually cleaned. Still assistive, not conclusive.
+- **Submission gains state:** a submission is now either `before_committed` (awaiting after) or `complete`. This is the only new data concept the feature adds — no new screen, no change to the Claude/escrow logic.
 
 ---
 
@@ -112,23 +201,37 @@ Optimized for one-day speed and demo reliability. Can be simplified further.
 
 ---
 
-## 9. Proposed MVP scope (to be finalized)
+## 9. MVP scope — FINALIZED
 
 **Mission type:** ONE — litter cleanup of a defined area, before/after photos.
 
 **Hero of demo:** Sponsor (campaign funded by a seeded sponsor, shown from student capture side).
 
-**Likely screens (tentative, ~4):**
-1. **Home / Campaign** — the sponsor's funded progress bar (hero), goal + threshold, community progress, a "verify a cleanup" CTA.
-2. **Mission detail** — instructions, what to photograph (before/after), the sponsor, the reward pool.
-3. **Verify** — upload before + after → Claude assessment with confidence + rationale → accept/reject → animated contribution to the funded bar.
-4. **Impact** — verified cleanups so far, community total, the sponsor's progress toward payout.
+**Screens (4):** see §6a for the full breakdown + demo script.
+1. **Campaign Home** — sponsor's funded progress bar (hero), goal/threshold, milestone markers, community feed, "verify a cleanup" CTA.
+2. **Mission Detail** — instructions, what to photograph (before/after), the sponsor, the reward pool.
+3. **Verify (two states)** — State A: commit BEFORE first (locked + timestamped). State B: upload AFTER → Claude assessment with confidence + rationale → pass → coupon + animated contribution to the funded bar.
+4. **Impact / proof trail** — verified cleanups, community total, sponsor's progress toward payout. (First to cut if time-constrained — fold into Campaign Home.)
 
-**Must-have:** before/after upload, Claude assessment with confidence + rationale, the funded progress bar animation, one seeded sponsor campaign, verified-cleanup history, plus the anti-fraud layer (section 9a): EXIF/geo soft-signal check, pHash duplicate detection, server-enforced composite verdict + atomic/idempotent bar increment, a seeded staged fraud submission, and platform hardening (server-only keys, storage RLS + signed URLs, upload validation, rate limiting).
+### Must-have (the demo breaks without these)
+- Two-step **before-first / after** upload with submission state (`before_committed` → `complete`).
+- **Claude assessment** returning confidence + one-line rationale on both pass AND reject.
+- **Reject / low-confidence path handled gracefully** — show the rationale, do NOT advance the funded bar, let the user retry. (Critical: protects the demo if a judge uploads a bad/fake photo.)
+- **Funded progress bar animation** (the hero moment — gets the polish budget).
+- **One seeded sponsor campaign** (pool, threshold, current progress, milestone markers).
+- **Personal milestone café coupon** firing on the first verified cleanup.
+- **Verified-cleanup history** (feeds the community feed + Impact/proof trail).
+- **Seeded `before_committed` submission** so the live demo starts mid-flow.
+- **Anti-fraud layer (see §9a):** EXIF/geo soft-signal check, pHash duplicate detection, server-enforced composite verdict + atomic/idempotent bar increment, a seeded staged fraud submission, and platform hardening (server-only keys, storage RLS + signed URLs, upload validation, rate limiting).
 
-**Mock / simplified:** auth (single demo user or magic link), sponsor (seeded, no dashboard), escrow/payout (seeded "pool unlocked" state), XP (secondary signal, not the headline).
+### Mock / simplified
+- **Auth → hardcoded demo user, no real login** (primary choice; magic link is a stretch goal only — avoid email/deliverability risk on demo day).
+- **Sponsor → seeded, no dashboard** (demoed from the student side).
+- **Escrow / payout → seeded "pool unlocked" state** (no real money, no Stripe).
+- **XP → secondary signal, not the headline** (optional to show at all).
 
-**Cut:** leaderboards, badges, levels, streaks, multiple mission types, real payments, organizer dashboard. (Note: EXIF/geo fraud detection moved OUT of cut and into the MVP as a scoped soft-signal check — see section 9a.)
+### Cut entirely
+Leaderboards, badges, levels, streaks, multiple mission types, real payments, organizer dashboard, magnitude/tier scoring, real redeemable coupon codes. (Note: EXIF/geo fraud detection is NOT cut — it moved into the MVP as a scoped soft-signal check; see §9a.)
 
 ---
 
@@ -154,14 +257,15 @@ Every security feature here strengthens the core differentiator — making the s
 
 ---
 
-## 10. OPEN QUESTION (not yet decided)
+## 10. RESOLVED: is the reward real or abstract?
 
-**Does the threshold payout resolve into a real redeemable reward, or stay abstract?**
+**The old open question:** when someone finishes a cleanup, do they get something *real* (an actual coupon they could use) or something *pretend* (just an on-screen "pool released" message)?
 
-- **Option A — Real seeded reward:** hitting the threshold unlocks a tangible shop discount/coupon shown as a card (seeded, not actually redeemable). Pro: tangible payoff, plants the business model. Con: extra surface.
-- **Option B — Abstract payout:** threshold hit shows a "reward pool unlocked / funds released to cleanup effort" state. Pro: simpler, keeps focus on the escrow mechanic. Con: less tangible.
+**Resolved → REAL, and early.** The milestone-coupon design answers it: the student gets a real (seeded) local café coupon after their **first** verified cleanup, instead of waiting for the final threshold. So:
+- **Personal reward = real (seeded) café coupon**, delivered at an early milestone.
+- **Communal payout = the "pool unlocked" state** at the final threshold (seeded, no real money moves).
 
-**Decision pending — flag for team discussion.** (Current build assumes **Option B / abstract "pool unlocked"** state until decided.)
+Both exist; they're the two layers in §5a. No remaining open question here.
 
 ---
 
@@ -178,11 +282,14 @@ Every security feature here strengthens the core differentiator — making the s
 
 - [x] Direction chosen: sponsor-funded verified-cleanup escrow
 - [x] Demo hero chosen: sponsor
-- [x] Security & anti-fraud layer scoped and locked (see section 9a)
-- [x] Must-have vs. mock vs. cut locked (security moved into must-have)
+- [x] Reward model decided: communal funded bar + personal milestone café coupon; binary 1-cleanup-1-unit, no tiers
+- [x] Reward real-vs-abstract question resolved: real (seeded) coupon, delivered early
+- [x] Two-step before-first/after verification flow decided (anti-staging)
+- [x] Screens + end-to-end demo journey finalized (§6a): 4 screens, sponsor-hero/student-instrument, hero moment = step 6
+- [x] Security & anti-fraud layer scoped and locked (§9a); EXIF/geo + pHash + server-enforced verdict moved into must-have
+- [x] Must-have vs. mock vs. cut LOCKED (§9) — incl. reject-path handling + hardcoded demo user
+- [x] **Ideation + requirements refinement COMPLETE — ready for Quick Spec / implementation**
 - [x] Implementation started: Next.js scaffold + secure config baseline
-- [ ] Resolve open question (real reward vs. abstract payout — build assumes Option B for now)
-- [ ] Finalize minimum screens + exact end-to-end journey
-- [ ] Complete verification pipeline (pHash, EXIF/geo, Claude, composite verdict, bar increment)
+- [ ] Complete verification pipeline (pHash, EXIF/geo, Claude, composite verdict, atomic bar increment)
 
-> Scope agreed and implementation underway. The anti-fraud layer is built inside the single Verify flow; the funded progress bar remains the centerpiece.
+> Scope is agreed. Next action: Quick Spec, then build. The concept brief above is the source of truth for both. The anti-fraud layer lives inside the single Verify flow; the funded progress bar remains the centerpiece.
