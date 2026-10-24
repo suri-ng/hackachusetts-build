@@ -69,13 +69,54 @@ Uploads BEFORE + AFTER photos
 Claude verifies: is it the same spot? is trash actually gone? staged/faked?
         │  (returns confidence score + one-line rationale)
         ▼
-Verified cleanup fills the sponsor's FUNDED progress bar
+Verified cleanup → 2 things happen at once:
+   • COMMUNAL: sponsor's funded bar ticks up toward the threshold
+   • PERSONAL: student unlocks a milestone reward (e.g. café coupon)
         │
         ▼
 Threshold hit → "reward pool unlocked" moment
 ```
 
-The demo centerpiece: **submit → Claude verifies with visible rationale → the sponsor's funded bar ticks up → threshold hit → pool unlocked.**
+The demo centerpiece: **submit → Claude verifies with visible rationale → the student gets a real coupon AND the sponsor's funded bar ticks up → (eventually) threshold hit → pool unlocked.**
+
+---
+
+## 5a. Reward system (how points/thresholds/coupons actually work)
+
+There are **two layers** of reward, and they're deliberately kept separate:
+
+### Layer 1 — Communal funded bar (the SPONSOR story)
+- A sponsor makes a **conditional pledge** defined by three numbers:
+  - **Pool** — money/value the sponsor puts up (e.g. **$500**).
+  - **Threshold (goal)** — how many verified cleanups unlock it (e.g. **100**).
+  - **Progress** — verified cleanups so far (e.g. **37 / 100**).
+- The **funded bar** = `progress ÷ threshold`, framed in the sponsor's money so it feels like real stakes.
+- **Binary counting: 1 verified cleanup = 1 unit.** No magnitude scoring, no small-vs-big weighting. (See note below on why.)
+- **Milestone markers** sit on the bar at 25 / 50 / 75 / 100 so there's always a near-term goal, not just one distant payout.
+
+```
+MASSPIRG — Clean Amherst Commons
+$500 reward pool · unlocks at 100 verified cleanups
+
+[██████████░░░░░░░░░░░░░░░░░░]  37 / 100 verified
+$185 of $500 unlocked      next milestone: 50
+```
+
+### Layer 2 — Personal milestone coupons (the STUDENT payoff)
+- Tied to **your own** verified-cleanup count, not the community's.
+- **1st verified cleanup → a real (seeded) local café coupon.** This is the tangible payoff that makes the loop satisfying.
+- A later personal milestone shows a slightly better perk as a "keep going" carrot.
+- The communal bar (Layer 1) still ticks up in parallel from the same single action — so one cleanup produces both a personal reward and communal progress.
+
+### Why ONE system, no tiers
+We are NOT building small-task vs. big-task reward tiers for the MVP. Tiering would force Claude to *estimate magnitude* ("how much trash was removed?"), which is far less reliable than a binary "cleaned: yes/no," and it invites gaming and balancing headaches. Keeping it binary also gives the sponsor clean unit economics ("$500 → 100 verified cleanups = $5 each, here's the proof"). 
+- **Say this in the pitch:** "Every verified cleanup counts as one unit today; weighting cleanups by assessed magnitude is the deliberate next version." That reads as maturity, not a gap.
+
+### What the small reward is
+**A local café coupon** (e.g. "$1 off" or "free drip coffee with any purchase"). Chosen because: coffee is the universal student currency, it's believable as a real local-shop offer, it reinforces the "local shops benefit" side of the pitch, and it renders beautifully as a seeded coupon card. It is **seeded/mocked** (not a real redeemable code) — say so in the pitch.
+
+### Demo rule for rewards
+Make the **first milestone reachable in a single cleanup**, so the demo shows the full loop (clean → verify → coupon unlocked) without faking 25 submissions. The bigger milestones (25/50/100) appear as visible markers on the bar for the story, but only the first one needs to fire live.
 
 ---
 
@@ -128,14 +169,15 @@ Optimized for one-day speed and demo reliability. Can be simplified further.
 
 ---
 
-## 10. OPEN QUESTION (not yet decided)
+## 10. RESOLVED: is the reward real or abstract?
 
-**Does the threshold payout resolve into a real redeemable reward, or stay abstract?**
+**The old open question:** when someone finishes a cleanup, do they get something *real* (an actual coupon they could use) or something *pretend* (just an on-screen "pool released" message)?
 
-- **Option A — Real seeded reward:** hitting the threshold unlocks a tangible shop discount/coupon shown as a card (seeded, not actually redeemable). Pro: tangible payoff, plants the business model. Con: extra surface.
-- **Option B — Abstract payout:** threshold hit shows a "reward pool unlocked / funds released to cleanup effort" state. Pro: simpler, keeps focus on the escrow mechanic. Con: less tangible.
+**Resolved → REAL, and early.** The milestone-coupon design answers it: the student gets a real (seeded) local café coupon after their **first** verified cleanup, instead of waiting for the final threshold. So:
+- **Personal reward = real (seeded) café coupon**, delivered at an early milestone.
+- **Communal payout = the "pool unlocked" state** at the final threshold (seeded, no real money moves).
 
-**Decision pending — flag for team discussion.**
+Both exist; they're the two layers in §5a. No remaining open question here.
 
 ---
 
@@ -152,7 +194,8 @@ Optimized for one-day speed and demo reliability. Can be simplified further.
 
 - [x] Direction chosen: sponsor-funded verified-cleanup escrow
 - [x] Demo hero chosen: sponsor
-- [ ] Resolve open question (real reward vs. abstract payout)
+- [x] Reward model decided: communal funded bar + personal milestone café coupon; binary 1-cleanup-1-unit, no tiers
+- [x] Reward real-vs-abstract question resolved: real (seeded) coupon, delivered early
 - [ ] Finalize minimum screens + exact end-to-end journey
 - [ ] Lock must-have vs. mock vs. cut
 - [ ] Then: Quick Spec / implementation (NOT before the above)
