@@ -88,14 +88,25 @@ export function Icon({
 
 export function SproutMark({ size = 40 }: { size?: number }) {
   return (
-    <span className="sprout-mark" style={{ width: size, height: size }} aria-hidden="true">
-      <svg viewBox="0 0 40 40" width={size} height={size} fill="none">
-        <rect width="40" height="40" rx="13" fill="currentColor" />
-        <path d="M20 30V18" stroke="white" strokeWidth="2.8" strokeLinecap="round" />
-        <path d="M19.5 20C13 20 10 16.6 10 11c6.4 0 9.5 3.5 9.5 9Z" fill="white" />
-        <path d="M20.5 17C27 17 30 13.8 30 8.5c-6.4 0-9.5 3.2-9.5 8.5Z" fill="#DDEBC9" />
-        <path d="M15 30h10" stroke="white" strokeWidth="2.8" strokeLinecap="round" />
-      </svg>
+    <span
+      className="sprout-mark"
+      style={{ width: size, height: size }}
+      aria-hidden="true"
+    >
+      <img src="/sprout-icon.png" alt="" width={size} height={size} />
     </span>
+  );
+}
+
+export function SproutLogo({ height = 36 }: { height?: number }) {
+  return (
+    <img
+      className="sprout-logo"
+      src="/sprout-logo.png"
+      alt=""
+      width={Math.round((420 / 147) * height)}
+      height={height}
+      aria-hidden="true"
+    />
   );
 }

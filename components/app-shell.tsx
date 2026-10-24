@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { motion } from 'framer-motion';
 import type { DataMode } from '@/lib/domain';
-import { Icon, SproutMark, type IconName } from './icons';
+import { Icon, SproutLogo, type IconName } from './icons';
 
 const nav: Array<{ href: string; label: string; icon: IconName }> = [
   { href: '/', label: 'Home', icon: 'home' },
@@ -29,8 +29,7 @@ export function AppShell({
       <header className="site-header">
         <div className="header-inner">
           <Link href="/" className="brand-lockup" aria-label="Sprout home">
-            <SproutMark size={38} />
-            <span>sprout</span>
+            <SproutLogo height={35} />
           </Link>
           <nav className="desktop-nav" aria-label="Primary navigation">
             {nav.map((item) => {

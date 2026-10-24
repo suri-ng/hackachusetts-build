@@ -8,7 +8,7 @@ import type { CampaignPayload, VerificationResult } from '@/lib/domain';
 import { AppShell } from './app-shell';
 import { celebrate } from './confetti';
 import { LAST_RESULT_KEY } from './home-client';
-import { Icon, type IconName } from './icons';
+import { Icon, SproutMark, type IconName } from './icons';
 
 type Stage = 'before' | 'after' | 'analyzing' | 'result';
 type SelectedPhoto = { preview: string; name: string; type: string; size: number; file?: Blob };
@@ -330,7 +330,7 @@ export function VerifyClient({
               {result.pass ? (
                 <>
                   <div className="reward-reveal">
-                    <motion.div className="points-reward" initial={{ x: -18, opacity: 0 }} animate={{ x: 0, opacity: 1 }} transition={{ delay: 0.28 }}><span className="big-reward-icon"><Icon name="leaf" size={28} /></span><span><small>{data.campaign.pointsMultiplier}× sponsor boost</small><strong>+{result.pointsAwarded} points</strong><em>{result.pointsBalance.toLocaleString()} total</em></span></motion.div>
+                    <motion.div className="points-reward" initial={{ x: -18, opacity: 0 }} animate={{ x: 0, opacity: 1 }} transition={{ delay: 0.28 }}><span className="big-reward-icon"><SproutMark size={30} /></span><span><small>{data.campaign.pointsMultiplier}× sponsor boost</small><strong>+{result.pointsAwarded} points</strong><em>{result.pointsBalance.toLocaleString()} total</em></span></motion.div>
                     {result.couponAwarded && result.coupon && <motion.div className="coupon-card" initial={{ x: 18, opacity: 0, rotate: 2 }} animate={{ x: 0, opacity: 1, rotate: -1 }} transition={{ delay: 0.38, type: 'spring' }}><span className="coupon-cut top"/><span className="coupon-cut bottom"/><div className="coupon-mark"><Icon name="gift" size={24} /></div><span><small>FIRST CLEANUP PERK</small><strong>{result.coupon.title}</strong><em>{result.coupon.detail} · {result.coupon.cafeName}</em></span><b>DEMO</b></motion.div>}
                   </div>
                   <div className="bar-contribution"><span className="contribution-before">{result.previousProgress}</span><span className="contribution-line"><motion.i initial={{ width: 0 }} animate={{ width: '100%' }} transition={{ delay: 0.5, duration: 0.7 }} /><motion.span initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ delay: 1, type: 'spring' }}><Icon name="leaf" size={18} /></motion.span></span><span className="contribution-after">{result.progress}</span><p><strong>One cleanup closer.</strong> The community just unlocked ${Math.round(result.unlockedValue)} of the ${data.campaign.pool} pool.</p></div>

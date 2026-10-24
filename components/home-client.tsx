@@ -7,7 +7,7 @@ import type { CampaignPayload, TaskCardData, VerificationResult } from '@/lib/do
 import { AppShell } from './app-shell';
 import { celebrate } from './confetti';
 import { FundedBar } from './funded-bar';
-import { Icon } from './icons';
+import { Icon, SproutMark } from './icons';
 
 export const LAST_RESULT_KEY = 'sprout:last-verification';
 
@@ -168,11 +168,11 @@ export function HomeClient({ initialData }: { initialData: CampaignPayload }) {
         <section className="welcome-row">
           <div>
             <span className="eyebrow">SATURDAY IN AMHERST</span>
-            <h1>Good morning, {user.firstName} <span aria-hidden="true">🌱</span></h1>
+            <h1>Good morning, {user.firstName} <SproutMark size={25} /></h1>
             <p>One small action can move a whole community.</p>
           </div>
           <motion.div className="wallet-card" whileHover={{ y: -3 }} transition={{ type: 'spring', stiffness: 320, damping: 22 }}>
-            <span className="wallet-icon"><Icon name="leaf" size={21} /></span>
+            <span className="wallet-icon"><SproutMark size={23} /></span>
             <span><small>Your Sprout points</small><strong><CountUp value={user.pointsBalance} /></strong></span>
             <span className="wallet-gain">+160 today</span>
           </motion.div>
@@ -262,7 +262,7 @@ export function HomeClient({ initialData }: { initialData: CampaignPayload }) {
         </section>
 
         <footer className="page-footer">
-          <div><span className="footer-mark"><Icon name="leaf" size={18} /></span><span><strong>Sprout demo</strong><small>Reset before your next walkthrough.</small></span></div>
+          <div><span className="footer-mark"><SproutMark size={19} /></span><span><strong>Sprout demo</strong><small>Reset before your next walkthrough.</small></span></div>
           {data.mode === 'supabase' ? <span className="live-retention"><Icon name="shield" size={16} /> Live data retained in Supabase</span> : <button className="reset-button" type="button" onClick={resetDemo} disabled={resetting}><Icon name="reset" size={17} /> {resetting ? 'Resetting…' : 'Reset demo'}</button>}
         </footer>
       </div>

@@ -6,7 +6,7 @@ import { motion } from 'framer-motion';
 import type { CampaignPayload } from '@/lib/domain';
 import { AppShell } from './app-shell';
 import { FundedBar } from './funded-bar';
-import { Icon, type IconName } from './icons';
+import { Icon, SproutMark, type IconName } from './icons';
 
 const trustChecks: Array<{ icon: IconName; title: string; copy: string; tag: string }> = [
   { icon: 'eye', title: 'Scene comparison', copy: 'Before and after frames are assessed together for the same place and a visible cleanup.', tag: 'Claude vision' },
@@ -60,7 +60,7 @@ export function ImpactClient({ initialData }: { initialData: CampaignPayload }) 
             <p>Every verified action becomes a line in a sponsor-ready proof trail, not a promise in a year-end PDF.</p>
           </motion.div>
           <motion.div className="impact-score-card" initial={{ opacity: 0, scale: 0.94, rotate: 1 }} animate={{ opacity: 1, scale: 1, rotate: 0 }} transition={{ type: 'spring', stiffness: 210, damping: 21 }}>
-            <div className="impact-ring"><span><Icon name="leaf" size={26} /><strong>{user.pointsBalance.toLocaleString()}</strong><small>points</small></span></div>
+            <div className="impact-ring"><span><SproutMark size={27} /><strong>{user.pointsBalance.toLocaleString()}</strong><small>points</small></span></div>
             <div className="impact-mini-stats"><span><strong>{user.actionsCompleted}</strong><small>actions</small></span><span><strong>{user.verifiedCleanups}</strong><small>sponsor cleanups</small></span><span><strong>{Math.round(estimatedDollars)}</strong><small>dollars unlocked</small></span></div>
           </motion.div>
         </section>
@@ -108,7 +108,7 @@ export function ImpactClient({ initialData }: { initialData: CampaignPayload }) 
         </section>
 
         <section className="impact-cta">
-          <span className="cta-sprout"><Icon name="leaf" size={30} /></span><div><span className="eyebrow">THE NEXT LINE IS YOURS</span><h2>Make one corner count.</h2><p>A demo before photo is already locked and ready for the hero flow.</p></div><Link href="/verify" className="button button-primary button-large">Verify a cleanup <Icon name="arrowRight" size={20} /></Link>
+          <span className="cta-sprout"><SproutMark size={34} /></span><div><span className="eyebrow">THE NEXT LINE IS YOURS</span><h2>Make one corner count.</h2><p>A demo before photo is already locked and ready for the hero flow.</p></div><Link href="/verify" className="button button-primary button-large">Verify a cleanup <Icon name="arrowRight" size={20} /></Link>
         </section>
 
         <footer className="page-footer"><div><span className="footer-mark"><Icon name="shield" size={18} /></span><span><strong>{data.mode === 'supabase' ? 'Live retention active' : 'Transparent demo mode'}</strong><small>{data.mode === 'supabase' ? 'Private proof and verdicts are retained in Supabase.' : 'Seeded verification and illustrative partners are labeled throughout.'}</small></span></div>{data.mode === 'supabase' ? <span className="live-retention"><Icon name="shield" size={16} /> Supabase live</span> : <button className="reset-button" onClick={reset} disabled={resetting} type="button"><Icon name="reset" size={17} /> {resetting ? 'Resetting…' : 'Reset demo'}</button>}</footer>

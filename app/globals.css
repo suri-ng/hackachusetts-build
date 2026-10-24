@@ -78,8 +78,10 @@ button:focus-visible, a:focus-visible, input:focus-visible, label:focus-visible 
   width: min(1180px, calc(100% - 40px)); height: 74px; margin: 0 auto;
   display: flex; align-items: center; gap: 32px;
 }
-.brand-lockup { display: inline-flex; align-items: center; gap: 10px; font-weight: 850; font-size: 24px; letter-spacing: -.055em; }
-.sprout-mark { display: inline-grid; place-items: center; color: var(--color-brand-dark); flex: 0 0 auto; }
+.brand-lockup { display: inline-flex; align-items: center; min-width: 101px; }
+.sprout-logo { display: block; width: auto; height: 35px; object-fit: contain; }
+.sprout-mark { display: inline-grid; place-items: center; flex: 0 0 auto; vertical-align: middle; }
+.sprout-mark img { display: block; width: 100%; height: 100%; object-fit: contain; }
 .desktop-nav { display: flex; align-items: center; gap: 5px; margin-left: 34px; }
 .nav-link {
   position: relative; isolation: isolate; min-width: 76px; padding: 10px 16px; border-radius: 999px;
@@ -149,6 +151,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, label:focus-visible 
 .celebration-toast > svg { color: var(--color-sun); }
 .welcome-row { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-bottom: 38px; }
 .welcome-row h1 { margin: 5px 0 4px; font-size: clamp(27px, 3.5vw, 40px); line-height: 1.05; letter-spacing: -.05em; }
+.welcome-row h1 .sprout-mark { margin-left: 6px; transform: translateY(-2px); }
 .welcome-row p { margin: 0; color: var(--color-ink-soft); font-size: 14px; }
 .wallet-card { min-width: 252px; padding: 14px 16px; display: flex; align-items: center; gap: 11px; border: 1px solid var(--color-border); border-radius: 18px; background: rgba(255,255,255,.82); box-shadow: var(--shadow-sm); }
 .wallet-icon { width: 39px; height: 39px; display: grid; place-items: center; border-radius: 13px; background: var(--color-brand-pale); color: var(--color-brand-deep); }
@@ -195,7 +198,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, label:focus-visible 
 .progress-wrap { padding: 13px 0 24px; overflow: visible; }
 .progress-track { position: relative; height: 14px; border: 3px solid white; border-radius: 999px; background: #d9ddcf; box-shadow: inset 0 2px 4px rgba(51,41,35,.12), 0 0 0 1px rgba(51,41,35,.06); }
 .progress-fill { position: absolute; left: 0; top: 0; bottom: 0; min-width: 8px; border-radius: inherit; background: linear-gradient(90deg, #729345, var(--color-brand)); box-shadow: inset 0 1px 0 rgba(255,255,255,.35); }
-.bar-sprout { position: absolute; z-index: 4; right: -14px; top: -11px; width: 30px; height: 30px; display: grid; place-items: center; border: 3px solid white; border-radius: 50%; background: var(--color-brand-dark); color: white; box-shadow: 0 4px 10px rgba(56,80,33,.25); }
+.bar-sprout { position: absolute; z-index: 4; right: -14px; top: -11px; width: 30px; height: 30px; display: grid; place-items: center; border: 3px solid white; border-radius: 50%; background: white; box-shadow: 0 4px 10px rgba(56,80,33,.25); }
 .milestone { position: absolute; z-index: 3; top: -2px; transform: translateX(-50%); }
 .milestone i { display: block; width: 4px; height: 12px; border-radius: 3px; background: white; box-shadow: 0 0 0 1px rgba(51,41,35,.12); }
 .milestone small { position: absolute; top: 18px; left: 50%; transform: translateX(-50%); color: #858776; font-size: 8px; font-style: normal; }
@@ -464,7 +467,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, label:focus-visible 
 .impact-score-card { padding: 27px; display: flex; align-items: center; gap: 27px; border: 1px solid #d6dec9; border-radius: 29px; background: white; box-shadow: var(--shadow-lg); }
 .impact-ring { width: 150px; height: 150px; padding: 13px; flex: 0 0 auto; border-radius: 50%; background: conic-gradient(var(--color-brand) 0 74%, #e6e8df 74% 100%); }
 .impact-ring > span { width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; border: 8px solid white; border-radius: 50%; background: var(--color-surface-soft); }
-.impact-ring svg { color: var(--color-brand-dark); }
+.impact-ring .sprout-mark { margin-bottom: 1px; }
 .impact-ring strong { margin-top: 3px; font-size: 22px; letter-spacing: -.04em; }
 .impact-ring small { color: var(--color-ink-soft); font-size: 8px; }
 .impact-mini-stats { flex: 1; display: flex; flex-direction: column; }
@@ -553,7 +556,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, label:focus-visible 
   body { padding-bottom: 76px; }
   .site-header { position: relative; background: transparent; border-bottom: 0; backdrop-filter: none; }
   .header-inner { width: calc(100% - 28px); height: 66px; }
-  .brand-lockup { font-size: 21px; }
+  .brand-lockup { min-width: 89px; }
+  .sprout-logo { height: 31px; }
   .desktop-nav { display: none; }
   .points-pill { min-height: 36px; padding: 7px 10px; }
   .avatar { width: 36px; height: 36px; }
