@@ -1,0 +1,17 @@
+<svg width="960" height="720" viewBox="0 0 960 720" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="sky" x1="480" y1="0" x2="480" y2="720" gradientUnits="userSpaceOnUse"><stop stop-color="#EAF2DC"/><stop offset="1" stop-color="#FAF8F0"/></linearGradient>
+    <linearGradient id="path" x1="500" y1="350" x2="620" y2="720" gradientUnits="userSpaceOnUse"><stop stop-color="#DCCCB8"/><stop offset="1" stop-color="#C6AC8F"/></linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#332923" flood-opacity=".12"/></filter>
+  </defs>
+  <rect width="960" height="720" rx="44" fill="url(#sky)"/>
+  <circle cx="808" cy="116" r="52" fill="#F6C760" opacity=".85"/>
+  <path d="M0 335C128 270 230 302 340 343C480 395 605 268 742 294C830 310 901 355 960 387V720H0V335Z" fill="#AFC98C"/>
+  <path d="M0 430C162 342 267 409 397 422C536 436 640 350 763 378C850 398 915 440 960 468V720H0V430Z" fill="#739451"/>
+  <path d="M420 355C482 381 531 422 540 469C549 516 494 617 468 720H780C716 613 667 512 675 457C681 417 709 379 748 349C632 323 526 326 420 355Z" fill="url(#path)"/>
+  <g filter="url(#shadow)"><path d="M122 385H285L267 410H140L122 385Z" fill="#7D5F49"/><path d="M147 411H160V507H147V411ZM246 411H259V507H246V411Z" fill="#57463A"/><rect x="126" y="350" width="156" height="22" rx="8" fill="#8E6B51"/></g>
+  <g><rect x="58" y="211" width="28" height="195" rx="14" fill="#6D503D"/><circle cx="72" cy="202" r="90" fill="#6F9850"/><circle cx="134" cy="245" r="68" fill="#83A760"/><circle cx="28" cy="256" r="59" fill="#91B36E"/></g>
+  <g><rect x="841" y="251" width="23" height="166" rx="11" fill="#6D503D"/><circle cx="851" cy="236" r="74" fill="#6F9850"/><circle cx="902" cy="268" r="55" fill="#8BAA68"/></g>
+  <g filter="url(#shadow)"><path d="M605 553L649 566L636 603L592 590L605 553Z" fill="#F3D978"/><path d="M606 553L650 566L654 578L601 562L606 553Z" fill="#FFF3B6"/><path d="M401 529L438 516L454 556L415 566L401 529Z" fill="#D76B50"/><path d="M711 468L747 477L738 506L700 496L711 468Z" fill="#5F9AB0"/><path d="M345 632C366 611 395 613 407 630C419 647 395 662 372 658C353 655 335 645 345 632Z" fill="#F8F6EE"/><path d="M347 635L404 634" stroke="#CACFCB" stroke-width="5"/><path d="M520 608L556 595L568 633L531 644L520 608Z" fill="#8F73A0"/></g>
+  <g transform="translate(52 42)"><rect width="190" height="50" rx="25" fill="#332923" fill-opacity=".88"/><circle cx="27" cy="25" r="8" fill="#F6C760"/><text x="47" y="32" fill="white" font-family="Arial, sans-serif" font-size="18" font-weight="700">BEFORE · LOCKED</text></g>
+</svg>

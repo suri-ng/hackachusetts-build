@@ -1,10 +1,20 @@
-// Verify (`/verify`) — two-state engine (State A before-commit / State B verdict).
-// Built in Task 9. Placeholder only; do not build screen content here.
-export default function VerifyPage() {
+import { VerifyClient } from '@/components/verify-client';
+import { campaignWithFallback } from '@/lib/services';
+
+export const dynamic = 'force-dynamic';
+
+export default async function VerifyPage({
+  searchParams,
+}: {
+  searchParams?: { fresh?: string; scenario?: string };
+}) {
+  const data = await campaignWithFallback();
+  const fraudDemo = searchParams?.scenario === 'fraud';
   return (
-    <main>
-      <h1>Verify</h1>
-      <p>Verify a cleanup — coming soon.</p>
-    </main>
+    <VerifyClient
+      data={data}
+      startFresh={!fraudDemo && (searchParams?.fresh === '1' || !data.pendingSubmissionId)}
+      fraudDemo={fraudDemo}
+    />
   );
 }

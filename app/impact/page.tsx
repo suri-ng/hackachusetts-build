@@ -1,10 +1,8 @@
-// Impact (`/impact`) — proof-trail screen. Built in Task 13 (first to cut).
-// Placeholder only; do not build screen content here.
-export default function ImpactPage() {
-  return (
-    <main>
-      <h1>Impact</h1>
-      <p>Impact proof trail — coming soon.</p>
-    </main>
-  );
+import { ImpactClient } from '@/components/impact-client';
+import { campaignWithFallback } from '@/lib/services';
+
+export const dynamic = 'force-dynamic';
+
+export default async function ImpactPage() {
+  return <ImpactClient initialData={await campaignWithFallback()} />;
 }

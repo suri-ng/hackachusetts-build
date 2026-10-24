@@ -1,10 +1,8 @@
-// Mission Detail (`/mission`). Built in Task 10.
-// Placeholder only; do not build screen content here.
-export default function MissionDetailPage() {
-  return (
-    <main>
-      <h1>Mission</h1>
-      <p>Mission Detail — coming soon.</p>
-    </main>
-  );
+import { MissionContent } from '@/components/mission-content';
+import { campaignWithFallback } from '@/lib/services';
+
+export const dynamic = 'force-dynamic';
+
+export default async function MissionDetailPage() {
+  return <MissionContent data={await campaignWithFallback()} />;
 }

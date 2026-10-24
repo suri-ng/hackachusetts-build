@@ -1,17 +1,36 @@
-import { defineConfig } from 'vitest/config';
-import react from '@vitejs/plugin-react';
 import { fileURLToPath } from 'node:url';
+import { defineConfig } from 'vitest/config';
 
 const rootDir = fileURLToPath(new URL('.', import.meta.url));
 
-// Root config shared by the workspace projects (see vitest.workspace.ts).
-// The node project exercises the pure lib/ + server core; the jsdom project
-// runs React component tests.
 export default defineConfig({
-  plugins: [react()],
   resolve: {
     alias: {
       '@': rootDir,
     },
+  },
+  test: {
+    projects: [
+      {
+        test: {
+          name: 'node',
+          environment: 'node',
+          include: [
+            'lib/**/*.test.ts',
+            'supabase/**/*.test.ts',
+            'app/api/**/*.test.ts',
+            'scripts/**/*.test.ts',
+          ],
+        },
+      },
+      {
+        test: {
+          name: 'jsdom',
+          environment: 'jsdom',
+          setupFiles: ['./vitest.setup.ts'],
+          include: ['app/**/*.test.tsx', 'components/**/*.test.tsx'],
+        },
+      },
+    ],
   },
 });
