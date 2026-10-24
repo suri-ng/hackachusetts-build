@@ -112,6 +112,7 @@ SPROUT_AI_MODE=seeded
 2. Open **Do this cleanup** and show the 2× boost and before-first integrity measure.
 3. Continue to `/verify`. Seeded live data includes a before photo already secured; an unseeded project starts at before capture.
 4. Click **Verify my cleanup** to show upload, duplicate, metadata, and Claude comparison stages.
+   - *Say this out loud:* "In live mode the private before/after photos are sent to Anthropic for analysis — a production launch would gate that behind explicit consent, retention, and deletion policies."
 5. Read the rationale, show +160 points and the café coupon, then click **Watch the funded bar move**.
 6. Open `/impact` to show the retained sponsor proof ledger and Kiro development story.
 7. Optional: open `/verify?scenario=fraud` for the deterministic duplicate + out-of-area rejection. This special judge demo stays local and never touches live sponsor progress.
