@@ -33,6 +33,7 @@ export const DEMO_CAMPAIGN: CampaignView = {
 
 export const DEMO_USER: DemoUserView = {
   id: DEMO_IDS.user,
+  username: 'alex',
   name: 'Alex Morgan',
   firstName: 'Alex',
   initials: 'AM',

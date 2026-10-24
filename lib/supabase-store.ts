@@ -1,5 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import {
+  displayNameForUsername,
+  initialsForIdentity,
+  type AuthIdentity,
+} from './auth';
 import { assessWithClaude } from './claude';
 import {
   DEMO_CAMPAIGN,
@@ -28,15 +32,12 @@ import type {
 import {
   referenceForStoragePath,
   storagePathFromReference,
-  supabaseConfig,
 } from './runtime-mode';
+import { getSupabaseAdminClient } from './supabase/admin';
 import { unlockedValue } from './verdict';
 
 const BUCKET = 'cleanup-photos';
 const MISSION_AREA = { lat: 42.375, lon: -72.5199, radiusMeters: 1_200 };
-
-let cachedClient: SupabaseClient | null = null;
-let cachedIdentity = '';
 
 export class LiveIntegrationError extends Error {
   constructor(
@@ -48,17 +49,11 @@ export class LiveIntegrationError extends Error {
   }
 }
 
-function client(): SupabaseClient {
-  const config = supabaseConfig();
-  if (!config) throw new LiveIntegrationError('supabase', 'Supabase is not configured.');
-  const identity = `${config.url}:${config.serviceRoleKey.slice(-6)}`;
-  if (!cachedClient || cachedIdentity !== identity) {
-    cachedClient = createClient(config.url, config.serviceRoleKey, {
-      auth: { autoRefreshToken: false, persistSession: false },
-    });
-    cachedIdentity = identity;
+export class ResourceOwnershipError extends Error {
+  constructor() {
+    super('This cleanup does not belong to the signed-in account.');
+    this.name = 'ResourceOwnershipError';
   }
-  return cachedClient;
 }
 
 function numberValue(value: unknown, fallback: number): number {
@@ -79,19 +74,23 @@ function initialsFor(name: string): string {
     .toUpperCase();
 }
 
-async function ensureBaseRows(): Promise<void> {
-  const db = client();
+async function ensureBaseRows(identity: AuthIdentity): Promise<void> {
+  const db = getSupabaseAdminClient();
+  const displayName = identity.displayName || displayNameForUsername(identity.username);
+  const firstName = displayName.split(' ')[0] || identity.username;
   const operations = await Promise.all([
     db.from('demo_user').upsert(
       {
-        id: DEMO_IDS.user,
-        display_name: DEMO_USER.name,
-        first_name: DEMO_USER.firstName,
-        initials: DEMO_USER.initials,
-        verified_count: DEMO_USER.verifiedCleanups,
-        points_balance: DEMO_USER.pointsBalance,
-        actions_completed: DEMO_USER.actionsCompleted,
-        coupon_awarded: DEMO_USER.couponAwarded,
+        id: identity.id,
+        auth_user_id: identity.id === DEMO_IDS.user ? null : identity.id,
+        username: identity.username,
+        display_name: displayName,
+        first_name: firstName,
+        initials: initialsForIdentity(identity),
+        verified_count: 0,
+        points_balance: 0,
+        actions_completed: 0,
+        coupon_awarded: false,
       },
       { onConflict: 'id', ignoreDuplicates: true },
     ),
@@ -133,18 +132,19 @@ async function ensureBaseRows(): Promise<void> {
   if (error) throw new LiveIntegrationError('supabase', 'Could not initialize Sprout data.');
 }
 
-export async function getSupabaseSnapshot(): Promise<CampaignPayload> {
-  await ensureBaseRows();
-  const db = client();
+export async function getSupabaseSnapshot(identity: AuthIdentity): Promise<CampaignPayload> {
+  await ensureBaseRows(identity);
+  const ownerId = identity.id;
+  const db = getSupabaseAdminClient();
   const [campaignResult, userResult, couponResult, pendingResult, feedResult] =
     await Promise.all([
       db.from('campaign').select('*').eq('id', DEMO_IDS.campaign).single(),
-      db.from('demo_user').select('*').eq('id', DEMO_IDS.user).single(),
+      db.from('demo_user').select('*').eq('id', ownerId).single(),
       db.from('cafe_coupon').select('*').eq('id', DEMO_COUPON.id).single(),
       db
         .from('submission')
         .select('id')
-        .eq('user_id', DEMO_IDS.user)
+        .eq('user_id', ownerId)
         .eq('campaign_id', DEMO_IDS.campaign)
         .eq('state', 'before_committed')
         .is('after_ref', null)
@@ -169,18 +169,20 @@ export async function getSupabaseSnapshot(): Promise<CampaignPayload> {
   const campaignRow = campaignResult.data as Record<string, unknown>;
   const userRow = userResult.data as Record<string, unknown>;
   const couponRow = couponResult.data as Record<string, unknown>;
-  const name = stringValue(userRow.display_name, DEMO_USER.name);
+  const name = stringValue(userRow.display_name, identity.displayName);
+  const defaultPoints = ownerId === DEMO_IDS.user ? DEMO_USER.pointsBalance : 0;
+  const defaultActions = ownerId === DEMO_IDS.user ? DEMO_USER.actionsCompleted : 0;
   const liveFeed: FeedItem[] = ((feedResult.data ?? []) as Array<Record<string, unknown>>)
     .map((row, index) => ({
       id: stringValue(row.id, `live-${index}`),
-      name: row.user_id === DEMO_IDS.user ? 'You' : 'Community member',
-      initials: row.user_id === DEMO_IDS.user ? stringValue(userRow.initials, initialsFor(name)) : 'CM',
+      name: row.user_id === ownerId ? 'You' : 'Community member',
+      initials: row.user_id === ownerId ? stringValue(userRow.initials, initialsFor(name)) : 'CM',
       location: 'Amherst Common',
       timeLabel: index === 0 ? 'Just now' : 'Recently',
       points: numberValue(row.points_awarded, DEMO_CAMPAIGN.basePoints * DEMO_CAMPAIGN.pointsMultiplier),
       confidence: numberValue(row.confidence, 0.9),
       accent: index % 2 === 0 ? 'leaf' : 'sky',
-      isCurrentUser: row.user_id === DEMO_IDS.user,
+      isCurrentUser: row.user_id === ownerId,
     }));
   const existingIds = new Set(liveFeed.map((item) => item.id));
   const feed = [
@@ -208,13 +210,14 @@ export async function getSupabaseSnapshot(): Promise<CampaignPayload> {
       endsLabel: stringValue(campaignRow.ends_label, DEMO_CAMPAIGN.endsLabel),
     },
     user: {
-      id: stringValue(userRow.id, DEMO_IDS.user),
+      id: stringValue(userRow.id, ownerId),
+      username: stringValue(userRow.username, identity.username),
       name,
-      firstName: stringValue(userRow.first_name, name.split(' ')[0] || DEMO_USER.firstName),
+      firstName: stringValue(userRow.first_name, name.split(' ')[0] || identity.username),
       initials: stringValue(userRow.initials, initialsFor(name)),
-      pointsBalance: numberValue(userRow.points_balance, DEMO_USER.pointsBalance),
+      pointsBalance: numberValue(userRow.points_balance, defaultPoints),
       verifiedCleanups: numberValue(userRow.verified_count, 0),
-      actionsCompleted: numberValue(userRow.actions_completed, DEMO_USER.actionsCompleted),
+      actionsCompleted: numberValue(userRow.actions_completed, defaultActions),
       couponAwarded: Boolean(userRow.coupon_awarded),
     },
     feed,
@@ -254,14 +257,23 @@ function extensionForMime(mime: string): string {
   return extensions[mime] ?? 'bin';
 }
 
+function ownedStoragePath(reference: string, ownerId: string): string {
+  const path = storagePathFromReference(reference);
+  if (!path.startsWith(`evidence/${ownerId}/`)) {
+    throw new ResourceOwnershipError();
+  }
+  return path;
+}
+
 export async function uploadEvidenceToSupabase(
+  ownerId: string,
   bytes: Buffer,
   mime: string,
   phase: 'before' | 'after',
 ): Promise<string> {
   const day = new Date().toISOString().slice(0, 10);
-  const path = `evidence/${DEMO_IDS.user}/${day}/${randomUUID()}-${phase}.${extensionForMime(mime)}`;
-  const { error } = await client().storage.from(BUCKET).upload(path, bytes, {
+  const path = `evidence/${ownerId}/${day}/${randomUUID()}-${phase}.${extensionForMime(mime)}`;
+  const { error } = await getSupabaseAdminClient().storage.from(BUCKET).upload(path, bytes, {
     contentType: mime,
     cacheControl: '3600',
     upsert: false,
@@ -270,32 +282,36 @@ export async function uploadEvidenceToSupabase(
   return referenceForStoragePath(path);
 }
 
-async function downloadEvidence(reference: string): Promise<Buffer> {
-  const path = storagePathFromReference(reference);
-  const { data, error } = await client().storage.from(BUCKET).download(path);
+async function downloadEvidence(reference: string, ownerId: string): Promise<Buffer> {
+  const path = ownedStoragePath(reference, ownerId);
+  const { data, error } = await getSupabaseAdminClient().storage.from(BUCKET).download(path);
   if (error || !data) throw new LiveIntegrationError('supabase', 'Could not load cleanup evidence.');
   return Buffer.from(await data.arrayBuffer());
 }
 
-export async function createSupabaseSubmission(beforeRef: string): Promise<{
+export async function createSupabaseSubmission(
+  identity: AuthIdentity,
+  beforeRef: string,
+): Promise<{
   id: string;
   state: 'before_committed';
   committedAt: string;
   mode: 'supabase';
 }> {
-  await ensureBaseRows();
-  const before = await downloadEvidence(beforeRef);
+  await ensureBaseRows(identity);
+  const beforePath = ownedStoragePath(beforeRef, identity.id);
+  const before = await downloadEvidence(beforeRef, identity.id);
   const [beforePhash, meta] = await Promise.all([
     perceptualHash(before),
     extractExif(before),
   ]);
   const committedAt = new Date().toISOString();
-  const { data, error } = await client()
+  const { data, error } = await getSupabaseAdminClient()
     .from('submission')
     .insert({
-      user_id: DEMO_IDS.user,
+      user_id: identity.id,
       campaign_id: DEMO_IDS.campaign,
-      before_ref: storagePathFromReference(beforeRef),
+      before_ref: beforePath,
       before_phash: beforePhash,
       before_lat: meta.lat ?? null,
       before_lon: meta.lon ?? null,
@@ -316,20 +332,22 @@ export async function createSupabaseSubmission(beforeRef: string): Promise<{
 }
 
 export async function attachSupabaseAfter(
+  ownerId: string,
   submissionId: string,
   afterRef: string,
 ): Promise<void> {
-  const path = storagePathFromReference(afterRef);
-  const { data, error } = await client()
+  const path = ownedStoragePath(afterRef, ownerId);
+  const { data, error } = await getSupabaseAdminClient()
     .from('submission')
     .update({ after_ref: path })
     .eq('id', submissionId)
-    .eq('user_id', DEMO_IDS.user)
+    .eq('user_id', ownerId)
     .eq('campaign_id', DEMO_IDS.campaign)
     .eq('state', 'before_committed')
     .select('id')
     .maybeSingle();
-  if (error || !data) throw new LiveIntegrationError('supabase', 'Could not attach the after photo.');
+  if (error) throw new LiveIntegrationError('supabase', 'Could not attach the after photo.');
+  if (!data) throw new ResourceOwnershipError();
 }
 
 interface EvidenceBundle {
@@ -341,11 +359,14 @@ interface EvidenceBundle {
   afterMeta: ExifMeta;
 }
 
-async function loadBundle(submission: PipelineSubmission): Promise<EvidenceBundle> {
+async function loadBundle(
+  submission: PipelineSubmission,
+  ownerId: string,
+): Promise<EvidenceBundle> {
   if (!submission.afterRef) throw new Error('After photo required.');
   const [before, after] = await Promise.all([
-    downloadEvidence(referenceForStoragePath(submission.beforeRef)),
-    downloadEvidence(referenceForStoragePath(submission.afterRef)),
+    downloadEvidence(referenceForStoragePath(submission.beforeRef), ownerId),
+    downloadEvidence(referenceForStoragePath(submission.afterRef), ownerId),
   ]);
   const [beforePhash, afterPhash, beforeMeta, afterMeta] = await Promise.all([
     perceptualHash(before),
@@ -358,12 +379,11 @@ async function loadBundle(submission: PipelineSubmission): Promise<EvidenceBundl
 
 const attemptTimes = new Map<string, number[]>();
 
-export function createSupabasePipelineDeps(): PipelineDeps {
-  const db = client();
-  let submissionRow: Record<string, unknown> | null = null;
+export function createSupabasePipelineDeps(ownerId: string): PipelineDeps {
+  const db = getSupabaseAdminClient();
   let bundlePromise: Promise<EvidenceBundle> | null = null;
   const evidence = (submission: PipelineSubmission) =>
-    (bundlePromise ??= loadBundle(submission));
+    (bundlePromise ??= loadBundle(submission, ownerId));
 
   return {
     dataMode: 'supabase',
@@ -372,12 +392,11 @@ export function createSupabasePipelineDeps(): PipelineDeps {
         .from('submission')
         .select('*')
         .eq('id', id)
-        .eq('user_id', DEMO_IDS.user)
+        .eq('user_id', ownerId)
         .eq('campaign_id', DEMO_IDS.campaign)
         .maybeSingle();
       if (error) throw new LiveIntegrationError('supabase', 'Could not load the submission.');
       if (!data) return null;
-      submissionRow = data as Record<string, unknown>;
       return {
         id: String(data.id),
         userId: String(data.user_id),
@@ -392,7 +411,7 @@ export function createSupabasePipelineDeps(): PipelineDeps {
     async validateSubmission(submission) {
       if (!submission.beforeRef) throw new Error('A committed before photo is required.');
       if (!submission.afterRef) throw new Error('Add an after photo before verification.');
-      if (submission.userId !== DEMO_IDS.user || submission.campaignId !== DEMO_IDS.campaign) {
+      if (submission.userId !== ownerId || submission.campaignId !== DEMO_IDS.campaign) {
         throw new Error('This cleanup does not belong to the active campaign.');
       }
     },

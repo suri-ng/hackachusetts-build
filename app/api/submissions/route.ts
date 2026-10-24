@@ -1,11 +1,15 @@
 import { NextResponse } from 'next/server';
 import { commitBeforeWithFallback } from '@/lib/services';
+import { getRequestIdentity } from '@/lib/supabase/server';
 
 export const runtime = 'nodejs';
 
 type CommitBody = { beforeRef?: unknown };
 
 export async function POST(request: Request): Promise<NextResponse> {
+  const identity = await getRequestIdentity();
+  if (!identity) return NextResponse.json({ error: 'Log in to continue.' }, { status: 401 });
+
   let body: CommitBody;
   try {
     body = (await request.json()) as CommitBody;
@@ -22,7 +26,7 @@ export async function POST(request: Request): Promise<NextResponse> {
   }
 
   try {
-    return NextResponse.json(await commitBeforeWithFallback(body.beforeRef), {
+    return NextResponse.json(await commitBeforeWithFallback(identity, body.beforeRef), {
       status: 201,
     });
   } catch {

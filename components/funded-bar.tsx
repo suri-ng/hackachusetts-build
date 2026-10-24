@@ -3,7 +3,7 @@
 import { motion, useReducedMotion } from 'framer-motion';
 import type { CampaignView } from '@/lib/domain';
 import { fillRatio, nextMilestone, unlockedValue } from '@/lib/verdict';
-import { Icon } from './icons';
+import { Icon, SproutMark } from './icons';
 
 export function FundedBar({
   campaign,
@@ -54,7 +54,7 @@ export function FundedBar({
               animate={reduceMotion ? undefined : { y: [0, -4, 0], rotate: [0, -3, 2, 0] }}
               transition={{ duration: 2.4, repeat: Infinity, repeatDelay: 1.8 }}
             >
-              <Icon name="leaf" size={18} />
+              <SproutMark size={19} />
             </motion.span>
           </motion.div>
           {campaign.milestones.map((milestone) => (

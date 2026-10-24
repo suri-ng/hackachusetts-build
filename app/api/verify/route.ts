@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { PipelineError } from '@/lib/pipeline';
 import { verifyWithFallback } from '@/lib/services';
+import { getRequestIdentity } from '@/lib/supabase/server';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -11,6 +12,9 @@ type VerifyBody = {
 };
 
 export async function POST(request: Request): Promise<NextResponse> {
+  const identity = await getRequestIdentity();
+  if (!identity) return NextResponse.json({ error: 'Log in to continue.' }, { status: 401 });
+
   let body: VerifyBody;
   try {
     body = (await request.json()) as VerifyBody;
@@ -30,7 +34,7 @@ export async function POST(request: Request): Promise<NextResponse> {
   }
 
   try {
-    const result = await verifyWithFallback(body.submissionId, body.afterRef);
+    const result = await verifyWithFallback(identity, body.submissionId, body.afterRef);
     return NextResponse.json(result, {
       headers: { 'Cache-Control': 'no-store, max-age=0' },
     });
