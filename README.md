@@ -1,194 +1,52 @@
-# Sprout
+### Explain the problem
 
-**Small actions. Verified impact. Real momentum.**
+Climate funding has a last-mile proof problem. Sponsors can fund cleanups and sustainability programs, but often receive participation counts or reports instead of action-level proof that each dollar produced real environmental work. At the same time, students lack immediate incentives to take small climate actions.
 
-Sprout is a Fetch Rewards-style climate action app. Students complete simple local environmental missions, submit before-and-after proof, earn points and perks, and move sponsor-funded community goals. Its core product is **verified-impact escrow**: sponsor value advances only when evidence passes a server-authoritative verification pipeline.
+**Sprout turns sustainability budgets into verified local impact:** sponsors pledge toward a measurable goal, and progress advances only when a real cleanup is verified.
 
-## What works
+### Describe the features and functionality of your Project
 
-- Username + password sign-up/login through Supabase Auth with cookie-backed session retention
-- Per-account profiles, points, submissions, and private evidence ownership
-- Real before/after image uploads with decoded-byte, format, dimension, pixel, and 10 MB validation
-- Real camera-first before/after prompts with demo fixtures hidden from live submissions
-- Private evidence retention in Supabase Storage
-- Campaign, user, submission, verdict, points, and coupon persistence in Supabase Postgres
-- A versioned one-time consent notice before any photo is sent to Claude
-- One low-effort Claude Haiku multimodal request comparing both photos, with strict `{ confidence, rationale }` parsing
-- Perceptual-hash duplicate checks plus EXIF location/time soft signals
-- Atomic, idempotent database finalization of progress, points, coupon, hashes, and submission state
-- Automatic local demo fallback when either service is missing or unavailable
-- Four responsive routes with Framer Motion, confetti, reduced-motion support, and accessible controls
-- A legitimate 37→38 flow and a staged duplicate/out-of-area rejection flow
+Sprout is a rewards app for verified climate action.
 
-## Quick start in local demo mode
+A student chooses a cleanup mission, locks in a **before photo**, completes the cleanup, and submits an **after photo**. Sprout runs a server-authoritative verification pipeline using image validation, perceptual-hash duplicate detection, EXIF location/time signals, and Claude multimodal comparison.
 
-No credentials are required:
+When verified:
 
-```powershell
-npm install
-npm run dev
-```
+- **1 cleanup = 1 auditable impact unit**
+- The sponsor-funded bar advances: for example, **$500 toward 100 verified cleanups**
+- The student receives **points, sponsor multipliers, and a first-cleanup café reward**
+- Sponsors get a retained proof trail instead of a trust-based impact report
 
-Open [http://localhost:3000](http://localhost:3000). With missing Supabase credentials, account enforcement is skipped so the seeded demo still works; the header shows **Seeded demo** and all demo state stays in the local server process. Open `/login` to see which account configuration is missing.
+Fraudulent or reused evidence is rejected without moving sponsor progress. This creates a scalable incentive loop: **climate action → proof → reward → measurable sponsor impact.**
 
-## Configure Supabase accounts and the live Claude stack
+### How did you use Kiro to build your project?
 
-Supabase Auth activates as soon as the public Supabase URL/key are present; server-side sign-up also needs the service-role key. Persistent cleanup verification mode still requires both Supabase and Claude. Sprout does not expose either server key to the browser.
+We used **Kiro IDE, Quick Spec, Steering, Plan Mode, sub-agents, checkpoints, and correctness/property-based testing** as a complete end-to-end development workflow.
 
-### 1. Create `.env.local`
+**Quick Spec:** We turned Sprout’s core idea into the `.kiro/specs/sprout-verified-cleanup/` spec: `requirements.md`, `design.md`, and `tasks.md`. Instead of loosely implementing “AI-verified cleanups,” Kiro forced us to define exact invariants: a PASS moves sponsor progress by exactly one, a REJECT moves it by zero, duplicate evidence rejects, the first-cleanup coupon is awarded once, and repeated/concurrent verification cannot double-count a submission. `design.md` then converted those requirements into the fixed pipeline **validation → duplicate detection → geo/time → Claude → server verdict**, while `tasks.md` gave us an implementation order.
 
-```powershell
-Copy-Item .env.local.example .env.local
-```
+**Steering:** Our always-on `.kiro/steering/design-system.md` kept Kiro consistent across UI work. It defined Sprout as a **mobile-first consumer rewards app**, made the funded progress bar the visual centerpiece, assigned green to verified/progress states and earth tones to the coupon, required `prefers-reduced-motion`, and reserved the 37→38 funded-bar animation as the main demo beat. This prevented different Kiro sessions from producing disconnected styles.
 
-Fill in:
+**Plan Mode:** We used Plan Mode to inspect the existing repo before making changes and captured the result in `PLANNING_NOTES.md`. Kiro identified what was already implemented versus stubbed, then helped us lock scope for a one-day hackathon. A major decision was to keep **one real verified-cleanup/sponsor flow** while making additional tasks and sponsors a presentation layer. It also separated sponsor accounting from gamification: points and the **2× multiplier** could reward the user, but could never determine whether the funded bar advanced. That decision became `lib/points.ts` plus the server-authoritative verification flow.
 
-```dotenv
-# Anthropic server credentials
-ANTHROPIC_API_KEY=sk-ant-your-key
-# Optional override. If omitted, Sprout uses Anthropic's current low-cost,
-# vision-capable Claude Haiku model.
-ANTHROPIC_MODEL=claude-haiku-5-5
+**Sub-agents:** We delegated independent reviews instead of asking one conversation to reason about the entire product. A reward-integrity review focused specifically on replay/double-award risks and surfaced the danger of the same verified submission crediting progress or rewards multiple times. We addressed that with the `counted` guard and idempotent `finalizePass`/`increment_progress` path. `lib/pipeline.test.ts` now verifies that **five repeated requests still produce one increment**, and even **eight concurrent verification requests result in exactly one counted submission** and zero extra points. A separate usability review helped us keep verification understandable to students, reflected in the Verify UI's **“Why before-first?”** explanation and **“Private proof”** assurance.
 
-# Supabase project settings
-NEXT_PUBLIC_SUPABASE_URL=https://your-project-ref.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-or-publishable-key
-SUPABASE_URL=https://your-project-ref.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-or-secret-key
+**Checkpoints:** We used Kiro checkpoints around high-risk verification and reward changes so we could experiment without losing a known-good implementation. Our planning document also deliberately marks development checkpoints after the core data/verification layer, after the complete demo loop, and before the final build. We used those recovery points while iterating on anti-fraud and reward behavior; we did not need to restore a failed checkpoint.
 
-# Automatically choose live or fallback mode
-SPROUT_DATA_MODE=auto
-SPROUT_AI_MODE=auto
-```
+**Correctness / Property-Based Testing:** We used Kiro to test rules that must hold across many inputs—not whether Claude “understands” every possible photograph. Our deterministic property harness in `lib/test-support/property.ts` runs generated cases with reproducible seeds. Tests exercise properties such as duplicate hashes always rejecting, funded-bar ratios staying bounded, milestones resolving correctly, geo/time scores remaining valid, and rejected submissions awarding nothing. For reward integrity, we combined those properties with repeated/concurrent pipeline tests to enforce the key rule: **a verified submission can contribute rewards and sponsor progress at most once; rejected or replayed submissions contribute zero.**
 
-Security rules:
+Kiro gave us a traceable workflow from **product idea → specification → scoped plan → specialized review → implementation → correctness tests**, which was significantly faster and safer than independently prompting for features and stitching them together afterward.
 
-- Enable the **Email + Password** provider in Supabase Auth. Sprout maps each normalized username to an internal synthetic email and the server creates it as confirmed, so users never need an email address for this basic flow.
-- `NEXT_PUBLIC_SUPABASE_URL` plus `NEXT_PUBLIC_SUPABASE_ANON_KEY` enable the cookie-backed login gate. `SUPABASE_SERVICE_ROLE_KEY` is also required for sign-up and retained app data.
-- Never prefix `SUPABASE_SERVICE_ROLE_KEY` or `ANTHROPIC_API_KEY` with `NEXT_PUBLIC_`.
-- Never commit `.env.local`; it is ignored by Git.
-- Use a dedicated hackathon/demo Supabase project for the seeded reset.
-- Restart the Next.js process after changing environment values.
+### Video URL
 
-### 2. Apply the Supabase schema
+https://www.youtube.com/watch?v=NxQ9FZDpnw8
 
-In the Supabase SQL editor, run these files in order:
+### Additional info
 
-1. `supabase/schema.sql`
-2. `supabase/functions.sql`
+**Live demo:** https://hackachusetts-build.vercel.app/
 
-The schema creates the private `cleanup-photos` bucket, tables, indexes, RLS posture, Auth-to-profile trigger, and fields used by the app. The functions file installs restricted service-role RPCs for atomic pass/reject persistence. Reapply `supabase/schema.sql` to an existing Sprout project before testing sign-up so the `username` and `auth_user_id` columns and trigger exist.
+**Track:** Energy & climate tech
 
-### 3. Seed the live demo
+**Source Code:** https://github.com/suri-ng/hackachusetts-build
 
-```powershell
-npm run seed
-```
-
-This uploads the checked-in PNG evidence fixtures to the private bucket, computes their real perceptual hashes, and creates the canonical 37/100 campaign, demo user, coupon, pending submission, and fraud sample.
-
-You can alternatively run `supabase/seed.sql` in the SQL editor first, but `npm run seed` is still recommended because SQL alone cannot upload the image objects.
-
-### 4. Run
-
-```powershell
-npm run dev
-```
-
-The header should show **Supabase live**. If it shows **Seeded demo**, configuration is missing or either mode variable is forcing demo. If it shows **Fallback demo**, a configured service failed and Sprout opened its five-minute safety circuit. Fix the service and restart the process to retry immediately.
-
-## Account flow
-
-- When the public Supabase URL/key are configured, `proxy.ts` redirects signed-out page requests to `/login` and refreshes Supabase session cookies.
-- Sign-up accepts a normalized username (`a-z`, `0-9`, `_`) and an 8–72 character password. The server-only route creates a confirmed Supabase Auth user and matching `demo_user` profile.
-- Login uses the same internal username mapping. Supabase Auth stores the password hash; Sprout stores no password or refresh token in application tables.
-- Every app API validates the current Supabase user. Live uploads, submissions, profile reads, points, and verification writes are scoped to that user ID.
-- Log out clears the current browser session. Returning users keep their account and live Supabase data.
-
-This username-only MVP has no password recovery because it does not collect a real email or phone number. Add a verified recovery channel, stronger distributed sign-up rate limiting, and account deletion before public production use. The cookie setup follows the [Supabase Next.js SSR guidance](https://supabase.com/docs/guides/auth/server-side/nextjs), and the request gate uses the [Next.js `proxy.ts` convention](https://nextjs.org/docs/app/api-reference/file-conventions/proxy).
-
-## Fallback policy
-
-- Missing Supabase or Claude configuration selects local demo mode before any workflow begins.
-- A Supabase read/upload/write failure or Claude timeout/API/malformed-response failure opens a five-minute circuit and switches the complete workflow to local fallback mode.
-- Validation failures and low-confidence Claude verdicts do not trigger fallback; they return normal user-facing rejection states.
-- A seeded AI result never finalizes the Supabase-funded ledger. The database RPC requires `assessor_source = 'claude'`.
-- The local store is process-memory state. It is reliable for the single-process hackathon demo and resets when the server restarts.
-
-To deliberately force offline mode:
-
-```dotenv
-SPROUT_DATA_MODE=demo
-SPROUT_AI_MODE=seeded
-```
-
-## Recommended demo path
-
-1. Start at `/` and frame the sponsor problem: organizations get promises and PDFs, not action-level proof.
-2. Open **Do this cleanup** and show the 2× boost and before-first integrity measure.
-3. Continue to `/verify`.
-   - With live Supabase + Claude credentials, the seeded walkthrough fixture is ignored. Accept the one-time AI notice, then take a real before photo and a real after photo; supported phones open the rear camera.
-   - In local demo mode, use the supplied demo photos. The legitimate path deterministically succeeds and awards points without calling Claude.
-4. Click **Verify my cleanup** to show upload, duplicate, metadata, and Claude Haiku comparison stages. Live analysis sends both private photos in one consent-gated server-side request.
-5. Read the rationale, show +160 points and the café coupon, then click **Watch the funded bar move**.
-6. Open `/impact` to show the retained sponsor proof ledger and Kiro development story.
-7. Optional: open `/verify?scenario=fraud` for the deterministic duplicate + out-of-area rejection. This special judge demo stays local and never touches live sponsor progress.
-
-## Architecture
-
-```text
-Next.js App Router UI
-  ├─ /                campaign, wallet, tasks, community proof
-  ├─ /mission         mission guidance + sponsor contribution
-  ├─ /verify          real photo capture + verdict + rewards
-  └─ /impact          retained sponsor ledger + Kiro story
-          │ multipart image bytes / JSON
-Next.js server routes
-  ├─ GET/POST /api/campaign
-  ├─ POST     /api/upload-url     (server-side private upload)
-  ├─ POST     /api/submissions
-  └─ POST     /api/verify
-          │
-Verification pipeline
-  validation → pHash → EXIF/geo/time → Claude → composite verdict
-          │
-  ┌───────┴────────────────┐
-SupabaseRepository       DemoStore
-(private durable data)   (automatic local fallback)
-```
-
-Important implementation files:
-
-- `lib/claude.ts` — image normalization, Claude request, response validation, seeded error result
-- `lib/supabase-store.ts` — private storage, durable reads/writes, evidence loading, pipeline adapter
-- `lib/services.ts` — live selection, workflow fallback, and circuit breaker
-- `lib/runtime-mode.ts` — secret-safe configuration and mode resolution
-- `lib/pipeline.ts` — fixed server-authoritative verification order
-- `supabase/functions.sql` — atomic idempotent reward finalization
-
-Points never alter sponsor progress. One accepted cleanup always counts as exactly one funded unit; points and multipliers provide the consumer reward layer.
-
-## Validation
-
-```powershell
-npm test
-npm run build
-```
-
-The integration was also manually validated with actual multipart PNG bytes in forced demo mode and with deliberately unreachable service endpoints to confirm `fallback-demo` behavior.
-
-## How Kiro was used
-
-- **Kiro Plan tool:** analyzed the concept, repository state, hackathon constraints, and competing scope choices. The planning record is in `PLANNING_NOTES.md`.
-- **Kiro Specs:** `.kiro/specs/sprout-verified-cleanup/` records requirements, design, correctness properties, and task ordering.
-- **Kiro Steering:** `.kiro/steering/design-system.md` kept the visual roles, accessibility rules, mobile behavior, and animation priorities consistent.
-- **Agentic implementation:** repository exploration, pure verification logic, API and service adapters, UI implementation, production builds, live HTTP-flow validation, and screenshot QA were carried through as one traced workflow.
-- **Strategic fallback design:** real integrations remain the primary path without making the stage demo dependent on network health.
-
-## Honest product boundaries
-
-- Sponsor names, offers, coupon, and money are illustrative seeded data; no partnership or redeemability is claimed.
-- No real payment moves in this MVP.
-- Username-only accounts intentionally omit password recovery in this MVP; add a verified email/phone recovery channel before production.
-- Private evidence is sent to Anthropic for analysis only after the account accepts the versioned, one-time notice on that device. A production launch still needs published retention, deletion, and account-abuse policies.
-- AI verification raises the cost of cheating; it does not make photo evidence fraud-proof.
+Sprout is built with Next.js/TypeScript, Supabase, and Claude multimodal vision. The repository includes the required root `.kiro` directory with our specs and development artifacts. Sponsor offers and monetary values in the MVP are illustrative; no real payment is processed.
