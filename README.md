@@ -1,7 +1,7 @@
 <div align="center">
   <img src="public/sprout-logo.png" alt="Sprout logo" width="110" />
   <h1>Sprout</h1>
-  <p><strong>Verified climate-action rewards platform built with Next.js, TypeScript, Supabase, and Claude Vision.</strong></p>
+  <p><strong>Verifiable climate-action rewards platform built with Next.js, TypeScript, Supabase, and Claude Vision.</strong></p>
   <p>
     Turn local environmental action into proof sponsors can count.
     </br></br>Try it out: https://hackachusetts-build.vercel.app/
