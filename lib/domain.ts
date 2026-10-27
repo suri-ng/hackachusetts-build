@@ -1,3 +1,10 @@
+export const AI_CONSENT_VERSION = 'v2' as const;
+export const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isUuid(value: unknown): value is string {
+  return typeof value === 'string' && UUID_PATTERN.test(value);
+}
+
 export type DataMode = 'supabase' | 'seeded-demo' | 'fallback-demo';
 export type AssessorMode = 'claude' | 'seeded';
 export type Accent = 'leaf' | 'sun' | 'clay' | 'sky' | 'plum';
@@ -79,6 +86,37 @@ export interface CouponView {
   redeemable: boolean;
 }
 
+export interface ReviewStatusView {
+  submissionId: string;
+  reviewId?: string;
+  status: 'pending' | 'approved' | 'denied';
+  rationale: string;
+  updatedAt: string;
+}
+
+export interface ReviewQueueClaim {
+  id: string;
+  reviewId: string;
+  confidence: number;
+  rationale: string;
+  reasons: string[];
+  committedAt: string;
+  beforePhotoUrl?: string;
+  afterPhotoUrl?: string;
+}
+
+export interface ReviewDecisionResult {
+  decision: 'approved' | 'denied';
+  previousProgress: number;
+  progress: number;
+  unlockedValue: number;
+  poolUnlocked: boolean;
+  pointsAwarded: number;
+  pointsBalance: number;
+  couponAwarded: boolean;
+  wasCounted: boolean;
+}
+
 export interface CampaignPayload {
   campaign: CampaignView;
   user: DemoUserView;
@@ -88,12 +126,17 @@ export interface CampaignPayload {
   coupon: CouponView;
   pendingSubmissionId: string;
   fraudSubmissionId: string;
+  reviewStatus?: ReviewStatusView;
   mode: DataMode;
   aiMode: AssessorMode;
   generatedAt: string;
 }
 
+export type VerdictOutcome = 'pass' | 'review' | 'reject';
+
 export interface VerificationResult {
+  /** Three-way result. 'review' holds the claim for a human. */
+  outcome: VerdictOutcome;
   pass: boolean;
   confidence: number;
   rationale: string;
@@ -109,4 +152,6 @@ export interface VerificationResult {
   couponAwarded: boolean;
   coupon?: CouponView;
   wasCounted: boolean;
+  /** Immutable identity of the exact held evidence, present for review outcomes. */
+  reviewId?: string;
 }

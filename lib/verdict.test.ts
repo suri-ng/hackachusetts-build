@@ -96,6 +96,55 @@ describe('compositeVerdict', () => {
   });
 });
 
+describe('compositeVerdict — hold for review band', () => {
+  it('holds a borderline, non-duplicate claim for review instead of rejecting', () => {
+    // Confidence between hardRejectConfidence and claudeMinimum, no duplicate.
+    forAll(
+      float(VERDICT_POLICY.hardRejectConfidence, VERDICT_POLICY.claudeMinimum - 0.0001),
+      (confidence) => {
+        const verdict = compositeVerdict({
+          claudeConfidence: confidence,
+          geoScore: 0.5,
+          timeScore: 0.5,
+          duplicateFlag: false,
+        });
+        expect(verdict.outcome).toBe('review');
+        expect(verdict.pass).toBe(false);
+      },
+    );
+  });
+
+  it('never holds a duplicate for review — duplicates are always a hard reject', () => {
+    forAll(
+      float(VERDICT_POLICY.hardRejectConfidence, VERDICT_POLICY.claudeMinimum - 0.0001),
+      (confidence) => {
+        const verdict = compositeVerdict({
+          claudeConfidence: confidence,
+          geoScore: 0.5,
+          timeScore: 0.5,
+          duplicateFlag: true,
+        });
+        expect(verdict.outcome).toBe('reject');
+      },
+    );
+  });
+
+  it('rejects outright when confidence is well below the review band', () => {
+    forAll(
+      float(0, VERDICT_POLICY.hardRejectConfidence - 0.0001),
+      (confidence) => {
+        const verdict = compositeVerdict({
+          claudeConfidence: confidence,
+          geoScore: 0.5,
+          timeScore: 0.5,
+          duplicateFlag: false,
+        });
+        expect(verdict.outcome).toBe('reject');
+      },
+    );
+  });
+});
+
 describe('unlockedValue (Property 1)', () => {
   it('equals pool * (progress / threshold) and is monotonic in progress', () => {
     forAll(

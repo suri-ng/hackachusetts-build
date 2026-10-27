@@ -103,11 +103,13 @@ SUPABASE_SERVICE_ROLE_KEY, then apply schema.sql + functions.sql and rerun:
     throw new Error('Could not seed base rows. Apply schema.sql first.');
   }
 
-  await supabase.from('submission').delete().in('id', [
-    DEMO_IDS.pendingSubmission,
-    DEMO_IDS.fraudSubmission,
+  const resets = await Promise.all([
+    supabase.from('submission').delete().eq('user_id', DEMO_IDS.user),
+    supabase.from('known_phash').delete().eq('source', 'seed_stock'),
   ]);
-  await supabase.from('known_phash').delete().eq('source', 'seed_stock');
+  if (resets.some((result) => result.error)) {
+    throw new Error('Could not reset seeded submissions. Review schema constraints and try again.');
+  }
 
   const rows = await Promise.all([
     supabase.from('known_phash').upsert({

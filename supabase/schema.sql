@@ -6,10 +6,20 @@ create extension if not exists pgcrypto;
 
 do $$
 begin
-  if not exists (select 1 from pg_type where typname = 'submission_state') then
-    create type submission_state as enum ('before_committed', 'complete');
+  if not exists (
+    select 1
+    from pg_type
+    where typname = 'submission_state'
+      and typnamespace = 'public'::regnamespace
+  ) then
+    create type submission_state as enum ('before_committed', 'pending_review', 'complete');
   end if;
 end $$;
+
+-- Ensure all submission lifecycle values exist on an older enum (idempotent).
+alter type submission_state add value if not exists 'before_committed';
+alter type submission_state add value if not exists 'pending_review';
+alter type submission_state add value if not exists 'complete';
 
 create table if not exists demo_user (
   id               uuid primary key default gen_random_uuid(),
@@ -67,9 +77,33 @@ create table if not exists submission (
   rationale        text,
   reasons          text[] not null default '{}',
   assessor_source  text check (assessor_source is null or assessor_source in ('claude', 'seeded')),
+  review_id        uuid,
+  review_decision  text constraint submission_review_decision_check
+                     check (review_decision is null or review_decision in ('approved', 'denied', 'withdrawn')),
+  reviewed_by      text,
+  reviewed_at      timestamptz,
   points_awarded   int not null default 0 check (points_awarded >= 0),
   counted          boolean not null default false
 );
+
+-- Immutable review history is separate from the submission's active review id.
+create table if not exists review_audit (
+  id             uuid primary key default gen_random_uuid(),
+  submission_id  uuid not null,
+  review_id      uuid not null,
+  action         text not null constraint review_audit_action_check
+                   check (action in ('held', 'approved', 'denied', 'withdrawn')),
+  actor          text,
+  after_ref      text not null,
+  confidence     numeric check (confidence is null or confidence between 0 and 1),
+  rationale      text,
+  reasons        text[] not null default '{}',
+  occurred_at    timestamptz not null default now()
+);
+
+-- Audit rows retain the stable submission UUID even when demo seed rows are
+-- deleted and recreated. Drop the older FK if an earlier draft installed it.
+alter table review_audit drop constraint if exists review_audit_submission_id_fkey;
 
 create table if not exists cafe_coupon (
   id          uuid primary key default gen_random_uuid(),
@@ -118,7 +152,23 @@ alter table submission add column if not exists after_lat double precision;
 alter table submission add column if not exists after_lon double precision;
 alter table submission add column if not exists completed_at timestamptz;
 alter table submission add column if not exists assessor_source text;
+alter table submission add column if not exists review_id uuid;
+alter table submission add column if not exists review_decision text;
+alter table submission add column if not exists reviewed_by text;
+alter table submission add column if not exists reviewed_at timestamptz;
 alter table submission add column if not exists points_awarded int not null default 0;
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'submission_review_decision_check'
+      and conrelid = 'public.submission'::regclass
+  ) then
+    alter table submission add constraint submission_review_decision_check
+      check (review_decision is null or review_decision in ('approved', 'denied', 'withdrawn'));
+  end if;
+end $$;
 
 alter table cafe_coupon add column if not exists detail text not null default 'with any purchase';
 alter table cafe_coupon add column if not exists code text not null default 'SPROUT-DEMO';
@@ -130,12 +180,19 @@ create unique index if not exists demo_user_username_idx
   on demo_user (username)
   where username is not null;
 create unique index if not exists known_phash_value_idx on known_phash (phash);
+create unique index if not exists submission_review_id_idx
+  on submission (review_id)
+  where review_id is not null;
 create index if not exists submission_campaign_completed_idx
   on submission (campaign_id, completed_at desc)
   where state = 'complete' and verdict_pass = true;
 create index if not exists submission_user_pending_idx
   on submission (user_id, committed_at desc)
   where state = 'before_committed';
+create index if not exists review_audit_submission_occurred_idx
+  on review_audit (submission_id, occurred_at desc);
+create index if not exists review_audit_review_occurred_idx
+  on review_audit (review_id, occurred_at);
 
 -- Supabase Auth owns credentials. This trigger creates the matching Sprout
 -- profile and rejects unvalidated usernames even when Auth is called directly.
@@ -199,6 +256,7 @@ create trigger on_auth_user_created
 alter table demo_user enable row level security;
 alter table campaign enable row level security;
 alter table submission enable row level security;
+alter table review_audit enable row level security;
 alter table cafe_coupon enable row level security;
 alter table known_phash enable row level security;
 
@@ -210,6 +268,11 @@ drop policy if exists cafe_coupon_client_read on cafe_coupon;
 drop policy if exists demo_user_client_read on demo_user;
 revoke all on table demo_user, campaign, submission, cafe_coupon, known_phash
   from anon, authenticated;
+revoke all on table review_audit from public;
+revoke all on table review_audit from anon, authenticated;
+-- Runtime code may append/read history, but cannot rewrite or erase it.
+revoke update, delete, truncate on table review_audit from service_role;
+grant select, insert on table review_audit to service_role;
 
 insert into storage.buckets (
   id,

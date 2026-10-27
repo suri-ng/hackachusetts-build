@@ -47,6 +47,10 @@ describe('runVerification — order and gating', () => {
         calls.push('reject');
         return base.recordReject(s, r);
       },
+      recordReview: (s, r) => {
+        calls.push('review');
+        return base.recordReview(s, r);
+      },
     };
 
     // Attach an after ref so the pending submission is ready.

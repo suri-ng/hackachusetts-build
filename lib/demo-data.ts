@@ -12,6 +12,7 @@ export const DEMO_IDS = Object.freeze({
   user: '00000000-0000-0000-0000-0000000000a1',
   pendingSubmission: '00000000-0000-0000-0000-0000000000b1',
   fraudSubmission: '00000000-0000-0000-0000-0000000000b2',
+  reviewSubmission: '00000000-0000-0000-0000-0000000000b3',
 });
 
 export const DEMO_CAMPAIGN: CampaignView = {

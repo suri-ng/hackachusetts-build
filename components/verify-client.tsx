@@ -4,20 +4,19 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ChangeEvent, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import type { CampaignPayload, VerificationResult } from '@/lib/domain';
+import { AI_CONSENT_VERSION, type CampaignPayload, type VerificationResult } from '@/lib/domain';
 import { AppShell } from './app-shell';
 import { celebrate } from './confetti';
 import { LAST_RESULT_KEY } from './home-client';
 import { Icon, SproutMark, type IconName } from './icons';
 
-type Stage = 'before' | 'after' | 'analyzing' | 'result';
+type Stage = 'before' | 'after' | 'analyzing' | 'review-status' | 'result';
 type SelectedPhoto = { preview: string; name: string; type: string; size: number; file?: Blob };
 type AiConsentStatus = 'not-required' | 'checking' | 'required' | 'accepted';
 
 type UploadResponse = { objectPath?: string; mode?: CampaignPayload['mode']; error?: string };
 type CommitResponse = { id?: string; committedAt?: string; mode?: CampaignPayload['mode']; error?: string };
-
-const AI_CONSENT_VERSION = 'v1';
+type RetryResponse = { id?: string; state?: 'before_committed'; mode?: CampaignPayload['mode']; error?: string };
 
 const analysisSteps: Array<{ title: string; detail: string; icon: IconName }> = [
   { title: 'Securing the upload', detail: 'Checking image type, size, and submission state', icon: 'lock' },
@@ -108,21 +107,29 @@ export function VerifyClient({
   data,
   startFresh,
   fraudDemo,
+  showReviewStatus = false,
 }: {
   data: CampaignPayload;
   startFresh: boolean;
   fraudDemo: boolean;
+  showReviewStatus?: boolean;
 }) {
   const router = useRouter();
   const reduceMotion = useReducedMotion();
-  const initialConsentRequired = !fraudDemo && data.mode === 'supabase' && data.aiMode === 'claude';
+  const initialConsentRequired = !fraudDemo && !showReviewStatus && data.mode === 'supabase' && data.aiMode === 'claude';
   const consentKey = aiConsentKey(data.user.id);
-  const [stage, setStage] = useState<Stage>(startFresh ? 'before' : 'after');
+  const [stage, setStage] = useState<Stage>(showReviewStatus ? 'review-status' : startFresh ? 'before' : 'after');
   const [submissionId, setSubmissionId] = useState(
-    fraudDemo ? data.fraudSubmissionId : data.pendingSubmissionId,
+    showReviewStatus && data.reviewStatus
+      ? data.reviewStatus.submissionId
+      : fraudDemo
+        ? data.fraudSubmissionId
+        : data.pendingSubmissionId,
   );
   const [photo, setPhoto] = useState<SelectedPhoto | null>(
-    fraudDemo
+    showReviewStatus
+      ? null
+      : fraudDemo
       ? {
           preview: '/demo-fraud.png',
           name: 'integrity-test.png',
@@ -273,6 +280,7 @@ export function VerifyClient({
           submissionId,
           afterRef,
           aiConsent: aiConsentAccepted,
+          aiConsentVersion: aiConsentAccepted ? AI_CONSENT_VERSION : null,
         }),
       });
 
@@ -300,6 +308,49 @@ export function VerifyClient({
   function returnHome() {
     if (result) window.sessionStorage.setItem(LAST_RESULT_KEY, JSON.stringify(result));
     router.push('/');
+  }
+
+  async function retryReview() {
+    setBusy(true);
+    setError('');
+    try {
+      const reviewId = result?.reviewId ?? data.reviewStatus?.reviewId;
+      if (!reviewId) throw new Error('This review is no longer current. Refresh and try again.');
+      const response = await fetch('/api/submissions', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ submissionId, reviewId }),
+      });
+      const payload = (await response.json()) as RetryResponse;
+      if (!response.ok || !payload.id) {
+        throw new Error(payload.error || 'Could not reopen this cleanup.');
+      }
+      if (payload.mode) setWorkflowMode(payload.mode);
+      if ((payload.mode ?? workflowMode) === 'supabase') {
+        try {
+          setConsentStatus(window.localStorage.getItem(consentKey) ? 'accepted' : 'required');
+        } catch {
+          setConsentStatus('required');
+        }
+      }
+      setResult(null);
+      setAnalysisIndex(-1);
+      setPhoto(
+        (payload.mode ?? workflowMode) === 'supabase'
+          ? null
+          : {
+              preview: '/demo-after.png',
+              name: 'amherst-after.png',
+              type: 'image/png',
+              size: 246_000,
+            },
+      );
+      setStage('after');
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Could not reopen this cleanup.');
+    } finally {
+      setBusy(false);
+    }
   }
 
   function retry() {
@@ -334,11 +385,11 @@ export function VerifyClient({
             <span className="eyebrow">ONE-TIME AI NOTICE</span>
             <h2 id="ai-consent-title">Let Claude compare your cleanup photos?</h2>
             <p id="ai-consent-description">
-              Sprout stores your before-and-after photos as private evidence and sends them from the server to Anthropic&apos;s Claude API to check that the same place was meaningfully cleaned.
+              Sprout stores your before-and-after photos as private evidence and sends them from the server to Anthropic&apos;s Claude API. If automated checks are inconclusive, an authorized Sprout reviewer may inspect the same private evidence.
             </p>
             <div className="ai-consent-detail">
               <Icon name="lock" size={20} />
-              <span><strong>Your photos are not posted publicly.</strong><small>No photo is sent to Claude until you agree. This notice appears once on this device for your account.</small></span>
+              <span><strong>Your photos are not posted publicly.</strong><small>Reviewer access requires server authorization and uses short-lived private links. No photo is processed until you agree; this notice appears once on this device for your account.</small></span>
             </div>
             <div className="ai-consent-actions">
               <button className="button button-quiet" type="button" onClick={declineAiConsent}>Not now</button>
@@ -352,7 +403,7 @@ export function VerifyClient({
         <div className="verify-topbar">
           <Link className="back-link" href="/mission"><Icon name="arrowLeft" size={18} /> Mission details</Link>
           <div className="stepper" aria-label="Verification progress">
-            <span className="step-done"><Icon name="check" size={13} /> Before</span><i /><span className={stage === 'before' ? '' : 'step-active'}>2&nbsp; After</span><i /><span className={stage === 'result' ? 'step-active' : ''}>3&nbsp; Verify</span>
+            <span className="step-done"><Icon name="check" size={13} /> Before</span><i /><span className={stage === 'before' ? '' : 'step-active'}>2&nbsp; After</span><i /><span className={stage === 'result' || stage === 'review-status' ? 'step-active' : ''}>3&nbsp; Verify</span>
           </div>
           <span className="privacy-note"><Icon name="lock" size={14} /> Private proof</span>
         </div>
@@ -384,6 +435,13 @@ export function VerifyClient({
                 <h1>{fraudDemo ? 'Run the integrity stress test.' : 'Nice work. Show the difference.'}</h1>
                 <p>{fraudDemo ? 'This seeded case deliberately reuses evidence from outside the mission area.' : 'Match your original viewpoint, then let the verification pipeline compare both frames.'}</p>
               </div>
+
+              {!fraudDemo && data.reviewStatus?.status === 'denied' && data.reviewStatus.submissionId === submissionId && (
+                <div className="protected-outcome review-outcome denied-review-notice" role="status">
+                  <Icon name="info" size={21} />
+                  <span><strong>A reviewer requested clearer evidence.</strong><small>{data.reviewStatus.rationale} Your original before photo is still secured—take a new after photo below.</small></span>
+                </div>
+              )}
 
               <div className="comparison-card">
                 <div className="comparison-photo locked-photo"><span className="comparison-label"><Icon name="lock" size={14} /> Before · secured</span><img src={fraudDemo ? '/demo-fraud.png' : '/demo-before.png'} alt="Secured before cleanup illustration" /></div>
@@ -430,15 +488,30 @@ export function VerifyClient({
             </motion.section>
           )}
 
+          {stage === 'review-status' && data.reviewStatus?.status === 'pending' && (
+            <motion.section key="review-status" className="result-screen review" initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }}>
+              <motion.div className="result-icon" initial={{ scale: 0 }} animate={{ scale: 1 }}><Icon name="clock" size={38} /></motion.div>
+              <span className="eyebrow">AWAITING AUTHORIZED REVIEW</span>
+              <h1>Your evidence is safely on hold.</h1>
+              <p className="result-rationale">“{data.reviewStatus.rationale}”</p>
+              <div className="protected-outcome review-outcome"><Icon name="lock" size={21} /><span><strong>Evidence frozen · no reward issued</strong><small>An authorized reviewer can inspect this exact private pair through short-lived links. The funded bar and your points stay unchanged while it is pending.</small></span></div>
+              {error && <p className="form-error" role="alert">{error}</p>}
+              <div className="result-actions">
+                <button className="button button-primary button-large" type="button" onClick={retryReview} disabled={busy}>{busy ? 'Reopening…' : 'Withdraw and submit clearer photos'} <Icon name="camera" size={19} /></button>
+                <Link className="button button-quiet" href="/mission">Back to mission</Link>
+              </div>
+            </motion.section>
+          )}
+
           {stage === 'result' && result && (
-            <motion.section key="result" className={result.pass ? 'result-screen pass' : 'result-screen reject'} initial={{ opacity: 0, scale: 0.92, y: 18 }} animate={{ opacity: 1, scale: 1, y: 0 }} transition={{ type: 'spring', stiffness: 240, damping: 20 }}>
-              <motion.div className="result-icon" initial={{ scale: 0, rotate: -18 }} animate={{ scale: 1, rotate: 0 }} transition={{ delay: 0.12, type: 'spring', stiffness: 330, damping: 18 }}><Icon name={result.pass ? 'check' : 'shield'} size={38} /></motion.div>
-              <span className="eyebrow">{result.pass ? 'CLEANUP VERIFIED' : 'PROOF NEEDS ATTENTION'}</span>
-              <h1>{result.pass ? 'You made this place better.' : 'Good catch. Nothing moved.'}</h1>
+            <motion.section key="result" className={`result-screen ${result.outcome}`} initial={{ opacity: 0, scale: 0.92, y: 18 }} animate={{ opacity: 1, scale: 1, y: 0 }} transition={{ type: 'spring', stiffness: 240, damping: 20 }}>
+              <motion.div className="result-icon" initial={{ scale: 0, rotate: -18 }} animate={{ scale: 1, rotate: 0 }} transition={{ delay: 0.12, type: 'spring', stiffness: 330, damping: 18 }}><Icon name={result.outcome === 'pass' ? 'check' : result.outcome === 'review' ? 'clock' : 'shield'} size={38} /></motion.div>
+              <span className="eyebrow">{result.outcome === 'pass' ? 'CLEANUP VERIFIED' : result.outcome === 'review' ? 'HELD FOR REVIEW' : 'PROOF NEEDS ATTENTION'}</span>
+              <h1>{result.outcome === 'pass' ? 'You made this place better.' : result.outcome === 'review' ? 'Thanks — a reviewer will take a look.' : 'Good catch. Nothing moved.'}</h1>
               <p className="result-rationale">“{result.rationale}”</p>
               <div className="result-meta"><span className="confidence-pill"><Icon name="sparkles" size={16} /> {Math.round(result.confidence * 100)}% integrity score</span><span className="assessor-pill"><span className="demo-dot" /> {result.assessor === 'seeded' ? 'Seeded Claude-ready result' : 'Claude assessment'}</span></div>
 
-              {result.pass ? (
+              {result.outcome === 'pass' ? (
                 <>
                   <div className="reward-reveal">
                     <motion.div className="points-reward" initial={{ x: -18, opacity: 0 }} animate={{ x: 0, opacity: 1 }} transition={{ delay: 0.28 }}><span className="big-reward-icon"><SproutMark size={30} /></span><span><small>{data.campaign.pointsMultiplier}× sponsor boost</small><strong>+{result.pointsAwarded} points</strong><em>{result.pointsBalance.toLocaleString()} total</em></span></motion.div>
@@ -446,6 +519,13 @@ export function VerifyClient({
                   </div>
                   <div className="bar-contribution"><span className="contribution-before">{result.previousProgress}</span><span className="contribution-line"><motion.i initial={{ width: 0 }} animate={{ width: '100%' }} transition={{ delay: 0.5, duration: 0.7 }} /><motion.span initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ delay: 1, type: 'spring' }}><Icon name="leaf" size={18} /></motion.span></span><span className="contribution-after">{result.progress}</span><p><strong>One cleanup closer.</strong> The community just unlocked ${Math.round(result.unlockedValue)} of the ${data.campaign.pool} pool.</p></div>
                   <div className="result-actions"><button className="button button-primary button-large" type="button" onClick={returnHome}>Watch the funded bar move <Icon name="arrowRight" size={20} /></button><Link className="button button-quiet" href="/impact">Open proof trail</Link></div>
+                </>
+              ) : result.outcome === 'review' ? (
+                <>
+                  <div className="reason-grid">{result.reasons.map((reason) => { const item = friendlyReason(reason); return <div className="reason-card" key={reason}><span><Icon name={item.icon} size={22} /></span><div><strong>{item.title}</strong><p>{item.copy}</p></div></div>; })}</div>
+                  <div className="protected-outcome review-outcome"><Icon name="clock" size={21} /><span><strong>Frozen for authorized review</strong><small>The reviewer sees this exact private pair through short-lived links. Progress stays at {result.progress} and no points were issued.</small></span></div>
+                  {error && <p className="form-error" role="alert">{error}</p>}
+                  <div className="result-actions"><button className="button button-primary button-large" type="button" onClick={retryReview} disabled={busy}>{busy ? 'Reopening…' : 'Withdraw and retry'} <Icon name="camera" size={19} /></button><button className="button button-quiet" type="button" onClick={returnHome}>Back to campaign</button></div>
                 </>
               ) : (
                 <>

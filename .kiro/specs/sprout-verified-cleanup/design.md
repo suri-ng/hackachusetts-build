@@ -2,18 +2,18 @@
 
 ## Overview
 
-Sprout is a mobile-first Next.js (App Router) application that implements **verified-impact escrow**: a sponsor's seeded reward pool unlocks only as AI-verified litter cleanups advance a funded progress bar toward a threshold. The product centerpiece is the funded-bar animation; its hero moment fires the instant Claude's rationale returns and the bar climbs while a personal café coupon pops.
+Sprout is a mobile-first Next.js App Router application implementing **verified-impact escrow**. Clear evidence can pass automatically, duplicate or conclusively weak evidence rejects, and borderline non-duplicate evidence enters a no-reward `pending_review` state. The funded bar animates only after an automatic or authorized human approval commits atomically.
 
-The repository is currently docs-only (`README.md`, `SPROUT_CONCEPT.md`). This design therefore includes **recreating the scaffold** (TypeScript, Next.js/React App Router, Supabase, Vitest) as the first build step, then layering the single server-enforced verification pipeline on top.
+The implemented application uses one student mission across four product routes. Human review adds no dashboard or product route: owner status and withdrawal live in Mission/Verify, while operators use a server-only bearer-token API.
 
-All anti-fraud logic lives server-side inside one endpoint, `POST /api/verify`, which runs a fixed-order pipeline and is the only path that can move the funded bar. Nothing trusts the client.
+All verdict logic remains server-authoritative. `POST /api/verify` computes pass/review/reject; `GET/POST /api/review` can inspect or resolve only frozen pending evidence after token authorization. Neither browser path can supply progress, points, reviewer identity, or an authoritative verdict.
 
 ### Design goals (in priority order, matching the brief's guardrails)
 
-1. One polished, fully-working end-to-end flow: before-commit → clean → after-upload → verify → coupon + bar animation.
-2. Server-authoritative composite verdict with atomic, idempotent progress increment.
-3. Graceful reject/low-confidence path (protects the demo if a judge uploads a bad photo).
-4. Visible anti-fraud: seeded staged-fraud submission caught live by duplicate + geo signals.
+1. One polished end-to-end flow: before commit → after photo → pass/review/reject → reward or recovery.
+2. Server-authoritative triage with duplicate evidence always hard-rejected.
+3. Atomic, idempotent automatic and human approval; pending, denied, and withdrawn claims award nothing.
+4. Owner-visible pending status and retry inside existing routes, plus token-authorized five-minute evidence reads without a dashboard.
 
 ### Degrade-gracefully order (if time runs short)
 
@@ -21,7 +21,7 @@ Per §6a/§9 of the concept brief, cut capability in this order and no further:
 
 1. **First to soften:** EXIF/geo/time soft-signal. It is a *soft* input to the verdict (missing metadata already lowers but never auto-rejects), so it can be stubbed to a neutral score with the pipeline shape intact.
 2. **Second to cut:** the Impact screen (#4); fold its proof-trail content into Campaign Home.
-3. **Never cut:** the funded-bar animation and the pass/reject rationale display. That animation *is* the product.
+3. **Never cut:** funded-bar causality, pass/review/reject rationale, duplicate hard rejection, or pending no-reward guarantees.
 
 ## Architecture
 
@@ -31,14 +31,16 @@ Per §6a/§9 of the concept brief, cut capability in this order and no further:
 │  CLIENT (React, mobile-first, animated)                                                  │
 │   ├─ /                 Campaign Home   (Funded_Bar + milestone markers + feed + CTA)     │
 │   ├─ /mission          Mission Detail  (instructions + before/after guidance)            │
-│   ├─ /verify           Verify (State A before-commit / State B after + verdict)          │
-│   └─ /impact           Impact proof trail (first to cut → folds into Home)               │
-│          │ fetch (multipart) + signed-URL upload                                         │
-│          ▼                                                                               │
-│  SERVER (Route Handlers — the ONLY place keys/verdict logic live)                        │
-│   ├─ POST /api/upload-url   issue Supabase signed upload URL (validated)                 │
-│   ├─ POST /api/verify       the single verification pipeline (§9a order)                 │
-│   └─ GET  /api/campaign     read campaign + feed for Home/Impact                         │
+│   ├─ /verify           Verify (before / after / outcome / pending + retry)                │
+│   └─ /impact           Impact proof trail                                                 │
+│          │ owner-authenticated fetch                                                       │
+│          ▼                                                                                 │
+│  SERVER (Route Handlers — keys, verdicts, and reward writes stay here)                    │
+│   ├─ POST       /api/upload-url   validate and retain owner-scoped private bytes           │
+│   ├─ POST/PATCH /api/submissions  commit before / owner withdrawal                         │
+│   ├─ POST       /api/verify       compute pass/review/reject                                │
+│   ├─ GET        /api/campaign     campaign + owner status                                   │
+│   └─ GET/POST   /api/review       bearer-authorized operator reads/decisions               │
 │          │                                                                               │
 │          ▼                                                                               │
 │  lib/ (pure, unit-tested core — no I/O)                                                  │
@@ -52,17 +54,18 @@ Per §6a/§9 of the concept brief, cut capability in this order and no further:
 └──────────┼───────────────────────────────────────────────────────────────────────────┘
            ▼
    Supabase ── Postgres (campaign, submission, coupon, demo_user, known_phash)
-            ── Storage  (before/after photos, RLS + signed upload URLs)
-            ── SQL function increment_progress(submission_id)  (atomic + idempotent)
+            ── private Storage (before/after photos; five-minute reviewer read URLs)
+            ── service-role SQL functions for automatic finalization, review hold/resolution, and owner withdrawal
             ── seed.sql (resettable demo data: campaign 500/100/37, staged fraud, coupon)
 ```
 
 ### Key architectural decisions
 
-- **Single trusted entry point.** Only `POST /api/verify` can change `progress`. The client never sends a verdict; it sends photo references and the target submission id.
-- **Pure core in `lib/`.** The verdict math, scoring, hashing, and pipeline ordering are pure functions that take already-extracted signals. This keeps the testable logic I/O-free so Vitest can exercise it with generated inputs (the focus areas: pipeline, composite verdict, idempotent increment).
-- **Atomicity pushed into Postgres.** The increment is a single conditional SQL statement/function keyed on `submission.id`, so "at most once per submission" holds even under retries or concurrency — not enforced in JavaScript.
-- **Server-only secrets.** The Claude API key and the Supabase service-role key are read only in route handlers; no `NEXT_PUBLIC_` prefix, so they never enter the client bundle.
+- **Trusted server entry points.** `POST /api/verify` computes automatic outcomes; bearer-authorized `/api/review` can resolve only `pending_review`. Database guards—not request data—control reward writes.
+- **Pure core in `lib/`.** Verdict math, scoring, hashing, and pipeline ordering are injected and unit-tested across live and demo adapters.
+- **Atomicity in Postgres.** Automatic finalization and human approval lock the Submission and use `counted=false` guards so state, Progress, points, and the first-cleanup coupon rule cannot double-apply.
+- **Frozen pending evidence.** The live hold locks the Submission, verifies the assessed after reference is still current, generates a unique `review_id`, stores pHashes/EXIF/verdict fields, and appends an immutable audit snapshot. Every decision and withdrawal must present the matching `review_id`.
+- **Server-only secrets.** Claude, Supabase service role, and `SPROUT_REVIEW_TOKEN` are unprefixed server variables. Reviewer identity is read from server configuration only.
 
 ## Technology Stack & Scaffold Recreation
 
@@ -88,7 +91,8 @@ tsconfig.json
 vitest.config.ts        node + jsdom projects
 vitest.setup.ts
 .env.local.example      ANTHROPIC_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY,
-                        NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY
+                        NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY,
+                        SPROUT_REVIEW_TOKEN, SPROUT_REVIEWER_ID
 app/                    routes + api route handlers
 lib/                    verdict.ts, phash.ts, geotime.ts, claude.ts, pipeline.ts
 supabase/               schema.sql, functions.sql, seed.sql
@@ -111,15 +115,16 @@ export interface VerdictSignals {
 }
 
 export interface Verdict {
-  pass: boolean;
-  confidence: number;       // surfaced to the student on BOTH outcomes
-  rationale: string;        // one line, shown on BOTH outcomes
-  reasons: string[];        // contributing reasons (populated on reject)
+  outcome: 'pass' | 'review' | 'reject';
+  pass: boolean;             // true only for pass
+  confidence: number;        // surfaced on all outcomes
+  rationale: string;         // one-line explanation
+  reasons: string[];         // contributors on review/reject
 }
 
-// finalVerdict = f(claudeConfidence, geoScore, timeScore, duplicateFlag)
-// Hard fail: duplicateFlag. Otherwise composite of confidence + soft signals
-// against server-side thresholds. Geo/time are SOFT and cannot alone reject.
+// finalOutcome = f(claudeConfidence, geoScore, timeScore, duplicateFlag)
+// Duplicate is an unconditional reject. Non-duplicates pass above the policy,
+// reject below the hard floor, and otherwise enter review.
 export function compositeVerdict(s: VerdictSignals): Verdict;
 
 export function unlockedValue(pool: number, progress: number, threshold: number): number; // pool*(progress/threshold)
@@ -130,8 +135,9 @@ export function nextMilestone(progress: number, markers?: number[]): number | nu
 `compositeVerdict` policy (server-tunable constants):
 - `duplicateFlag === true` → immediate reject, reason `"duplicate_photo"`. (Req 6.2, 16.1)
 - otherwise compute `score = claudeConfidence * wC + geoScore * wG + timeScore * wT` with weights summing to 1 and `wC` dominant.
-- `pass` when `claudeConfidence >= claudeMin` AND `score >= passThreshold`.
-- reasons collected for each failing contributor: `"low_confidence"`, `"out_of_area"` (low geoScore), `"time_mismatch"` (low timeScore). (Req 4.4, 16.1)
+- `pass` when `claudeConfidence >= claudeMinimum` AND the composite clears `passThreshold`.
+- non-duplicate evidence below `hardRejectConfidence` rejects; the remaining middle band enters `review` with no rewards.
+- reasons are collected for each failing contributor: `low_confidence`, `out_of_area`, and `time_mismatch`.
 
 Because geo/time only *lower* the composite and never set a hard fail, a legitimate cleanup with stripped EXIF (neutral 0.5 scores) still passes on strong Claude confidence (Req 7.3). The staged-fraud case fails on `duplicateFlag` plus a low `geoScore` → two reasons (Req 16.1).
 
@@ -167,9 +173,10 @@ export interface VerifyRequest {
   beforeRef: string; afterRef: string;     // storage references, not raw client verdicts
 }
 export interface VerifyResponse {
+  outcome: 'pass' | 'review' | 'reject';
   pass: boolean; confidence: number; rationale: string; reasons: string[];
-  progress?: number; unlockedValue?: number; poolUnlocked?: boolean;
-  couponAwarded?: boolean;
+  progress: number; unlockedValue: number; poolUnlocked: boolean;
+  pointsAwarded: number; couponAwarded: boolean; wasCounted: boolean;
 }
 export async function runVerification(req: VerifyRequest, deps: PipelineDeps): Promise<VerifyResponse>;
 ```
@@ -177,42 +184,38 @@ export async function runVerification(req: VerifyRequest, deps: PipelineDeps): P
 ### `runVerification` — the fixed §9a order (Req 4.2, 4.3)
 
 ```
-1. input validation        file type + size (Req 5.1/5.2/13.3) and rate limit (Req 5.3)
-                           → fail-fast: reject BEFORE any hashing/Claude work
-2. pHash duplicate check   hash both photos; compare to known_phash + prior submissions
-                           → duplicateFlag; (Req 6)
-3. EXIF/geo/time           extractExif → geoTimeScore → {geoScore, timeScore} (Req 7)
-4. Claude assess           assessWithClaude(before, after) with seeded fallback (Req 8)
-5. composite verdict       compositeVerdict({claudeConfidence, geoScore, timeScore, duplicateFlag})
-   ── if PASS:
-        5a. atomic idempotent increment  → increment_progress(submissionId) (Req 12)
-        5b. threshold check              → poolUnlocked = newProgress >= threshold (Req 10.3)
-        5c. pool-unlocked state update
-        5d. first-cleanup coupon award   (Req 11, at-most-once)
-        5e. set submission.state = complete (Req 3.4)
-   ── if REJECT:
-        return rejection with reasons; progress untouched (Req 1.3, 4.4, 9.2, 16.2)
-6. respond                 confidence + one-line rationale on BOTH outcomes (Req 9.1)
+1. input/state validation  owner, `before_committed`, image constraints, and rate limit
+2. pHash duplicate check   compare both images with seeded/prior evidence
+3. EXIF/geo/time           extract metadata and compute soft scores
+4. Claude assess           compare before and after together server-side
+5. composite outcome       `compositeVerdict(...)`
+   ├─ PASS: `finalize_verification` atomically completes and applies one reward package
+   ├─ REVIEW: `hold_for_review` stores the exact hashes/metadata/verdict and sets
+   │          `pending_review`; Progress, points, and coupon remain unchanged
+   └─ REJECT: record reasons; retain `before_committed` for a new after attempt
+6. respond                 confidence + one-line rationale on every domain outcome
 ```
 
-Validation runs first and short-circuits so malformed/abusive requests never reach pHash or Claude (Req 5.1). Steps 2–5 are pure given their extracted inputs, which is what makes the ordering and the verdict unit-testable. Steps 5a–5e run only on pass and only through server-side DB calls.
+Validation fails before expensive work. Duplicate evidence always rejects. Application and SQL state guards prevent attaching or re-verifying new evidence while a claim is pending. A separately authenticated operator can resolve only the frozen pending row.
 
 ### API route handlers (`app/api/`)
 
 | Route | Method | Purpose |
 |---|---|---|
-| `/api/upload-url` | POST | Validate intended file type/size, return a Supabase signed upload URL (Req 13.2/13.3) |
-| `/api/verify` | POST | The single verification pipeline (Req 4.1) |
-| `/api/campaign` | GET | Campaign state + latest-verified feed for Home/Impact |
+| `/api/upload-url` | POST | Validate and retain an owner-scoped private image |
+| `/api/submissions` | POST/PATCH | Commit before evidence / owner-withdraw a pending review |
+| `/api/verify` | POST | Compute the owner-scoped pass/review/reject pipeline |
+| `/api/campaign` | GET | Campaign, feed, and owner-visible review status |
+| `/api/review` | GET/POST | Bearer-authorized pending list with five-minute signed reads / atomic approve or deny |
 
 Before-commit (State A) creates a `before_committed` submission and records the commit timestamp (Req 3.2); it does **not** call `/api/verify`. After-upload (State B) calls `/api/verify` for the existing submission (Req 3.4). An after-upload with no committed before is rejected with a prompt (Req 3.5).
 
 ### Screens (Req 14) — 4 mobile-first routes
 
 1. **Campaign Home (`/`)** — hero. Sponsor identity, pledge ("$500, unlocks at 100 verified"), the **Funded_Bar** with markers at 25/50/75/100, unlocked value `pool*(progress/threshold)`, next-milestone label, latest-verified feed, and the "Verify a cleanup" CTA. The 37→38 bar animation on return from a pass is the hero beat (Req 2, 10.1). **Never cut.**
-2. **Mission Detail (`/mission`)** — instructions, before/after guidance, sponsor, contribution, CTA → Verify (Req 14.2).
-3. **Verify (`/verify`)** — State A commit-before (locked + timestamped), State B upload-after → calls `/api/verify` → shows confidence + rationale on pass and reject, success + coupon card on pass, retry on reject (Req 3, 9, 11.2).
-4. **Impact (`/impact`)** — verified cleanups, community total, sponsor progress toward payout (Req 14.4). **First screen to cut**; content folds into Home.
+2. **Mission Detail (`/mission`)** — instructions, sponsor contribution, active pending/denied status, and context-aware resume/retry CTA.
+3. **Verify (`/verify`)** — before and after capture, processing, pass/review/reject feedback, warning-styled pending status, and authenticated owner withdrawal/retry.
+4. **Impact (`/impact`)** — verified cleanups, community total, sponsor progress toward payout. Pending claims never appear as approved impact.
 
 ## Data Models
 
@@ -239,7 +242,7 @@ create table campaign (
 );
 
 -- submission (Req 3, 15.2, 15.3)
-create type submission_state as enum ('before_committed', 'complete');
+create type submission_state as enum ('before_committed', 'pending_review', 'complete');
 create table submission (
   id uuid primary key default gen_random_uuid(),
   user_id uuid references demo_user(id),
@@ -256,7 +259,27 @@ create table submission (
   confidence numeric,
   rationale text,
   reasons text[] not null default '{}',
-  counted boolean not null default false     -- idempotency guard (Req 12)
+  assessor_source text,
+  review_id uuid,                         -- immutable identity of active hold
+  review_decision text,                    -- approved | denied | withdrawn
+  reviewed_by text,                        -- server-sourced reviewer/owner id
+  reviewed_at timestamptz,
+  points_awarded int not null default 0,
+  counted boolean not null default false   -- idempotency guard (Req 12)
+);
+
+-- append-only snapshots and decisions survive later retries
+create table review_audit (
+  id uuid primary key default gen_random_uuid(),
+  submission_id uuid not null,              -- stable UUID; intentionally no FK so demo resets retain audit
+  review_id uuid not null,
+  action text not null,                     -- held | approved | denied | withdrawn
+  actor text,
+  after_ref text not null,
+  confidence numeric,
+  rationale text,
+  reasons text[] not null default '{}',
+  occurred_at timestamptz not null default now()
 );
 
 -- café coupon definition (Req 11, 15.4)
@@ -275,9 +298,11 @@ create table known_phash (
 );
 ```
 
-### Atomic idempotent increment (Req 12)
+### Atomic finalization and review resolution (Req 12, 19)
 
-A single Postgres function performs the conditional update keyed on the submission id. The `counted` flag is flipped in the same statement that bumps `progress`, so a repeated or concurrent call for the same submission is a no-op after the first — "at most once per submission" is enforced by the database, not the app.
+`finalize_verification` locks and atomically applies an automatic Claude pass. `hold_for_review` stores the exact assessed pHashes, metadata, rationale, reasons, and existing private references before changing state. `resolve_held_claim` locks the held row plus campaign/user rows: approval completes and rewards exactly once; denial reopens after capture with no reward. `retry_held_claim` performs the same no-reward reopening only when the supplied owner id matches. All functions are executable only by `service_role`.
+
+The retained `increment_progress` helper below illustrates the underlying `counted=false` compatibility guard; new automatic and human paths use the fuller RPCs in `supabase/functions.sql`.
 
 ```sql
 create or replace function increment_progress(p_submission_id uuid)
@@ -333,11 +358,15 @@ Seed is written to be re-runnable: it truncates the demo tables (or upserts cano
 | Duplicate photo | Hard-fail verdict, reason `"duplicate_photo"` | 6.2, 16.1 |
 | Missing EXIF | Lower geo/time scores to neutral; continue (no auto-reject) | 7.3 |
 | Claude error / timeout | Substitute seeded fallback verdict; pipeline completes | 8.3 |
-| Composite reject | Return confidence + rationale + reasons; progress untouched | 4.4, 9.1, 9.2 |
+| Composite reject | Return confidence + rationale + reasons; keep `before_committed`; progress untouched | 4, 9 |
+| Borderline non-duplicate | Persist frozen `pending_review`; no reward | 3.6, 4.4, 19.2 |
+| Missing/invalid reviewer token | `503` when disabled or `401` when unauthorized; disclose nothing | 13.4, 19.1 |
+| Reviewer approval | Atomic, idempotent completion and reward package | 12, 19.3 |
+| Reviewer denial / owner withdrawal | Reopen after-photo step with no reward | 3.7, 19.4–19.5 |
 | After-upload with no committed before | Reject; prompt to commit before first | 3.5 |
 | Double increment / retry | Idempotent SQL no-op after first count | 12 |
 
-The guiding rule: the pipeline **always reaches a response carrying a confidence score and a one-line rationale**, pass or fail, so the demo never hard-crashes and a rejected judge upload shows a clean, explained reject (Req 9.1).
+The guiding rule: every valid assessment returns a confidence score, concise rationale, and exactly one pass/review/reject outcome. Request/service failures remain API errors. Pending, denied, withdrawn, and rejected claims never move rewards or Progress.
 
 ## Testing Strategy
 
@@ -468,9 +497,9 @@ UI rendering, infra/config, and single-constant criteria are covered by example/
 
 **Validates: Requirements 8.3**
 
-### Property 18: Confidence and rationale are returned on both outcomes
+### Property 18: Confidence and rationale are returned on all outcomes
 
-*For any* completed verification, the response contains a numeric confidence score and a non-empty one-line rationale, whether the outcome is pass or reject.
+*For any* completed verification, the response contains a numeric confidence score and a non-empty one-line rationale whether the outcome is pass, review, or reject.
 
 **Validates: Requirements 8.2, 9.1**
 
@@ -497,3 +526,22 @@ UI rendering, infra/config, and single-constant criteria are covered by example/
 *For any* prior data-store state, running the seed script yields the fixed seeded starting values (campaign 500/100/37, one before_committed submission, the staged-fraud submission, the coupon), and running it again leaves that state unchanged.
 
 **Validates: Requirements 15.1, 15.2, 15.3, 15.4, 15.5**
+
+
+### Property 23: Pending review freezes evidence and rewards
+
+*For any* non-duplicate borderline Submission entering `pending_review`, its stored evidence fields remain unchanged until resolution and its campaign progress, points, coupon, and counted flag remain unchanged.
+
+**Validates: Requirements 3.6, 4.4, 19.2**
+
+### Property 24: Reviewer authorization fails closed
+
+*For any* missing, placeholder, short, or incorrect reviewer token, `/api/review` returns before listing, signing, approving, or denying any claim.
+
+**Validates: Requirements 13.4–13.5, 19.1**
+
+### Property 25: Human approval is atomic and idempotent
+
+*For any* held Submission and any repeated or concurrent authorized approvals, exactly one transition can set `complete`, increment Progress once, award configured points once, and apply the first-cleanup coupon rule; denial and owner withdrawal award nothing.
+
+**Validates: Requirements 12, 19.3–19.6**

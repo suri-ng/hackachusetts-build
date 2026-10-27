@@ -7,6 +7,7 @@ import {
   createDemoSubmission,
   getDemoSnapshot,
   resetDemoStore,
+  retryHeldClaim,
 } from './demo-store';
 import type { CampaignPayload, DataMode, VerificationResult } from './domain';
 import { PipelineError, runVerification } from './pipeline';
@@ -23,6 +24,8 @@ import {
   getSupabaseSnapshot,
   LiveIntegrationError,
   ResourceOwnershipError,
+  ReviewTransitionError,
+  retrySupabaseHeldClaim,
   uploadEvidenceToSupabase,
 } from './supabase-store';
 
@@ -39,7 +42,7 @@ function demoSnapshotFor(
   identity: AuthIdentity,
   mode: 'seeded-demo' | 'fallback-demo' = 'seeded-demo',
 ): CampaignPayload {
-  const snapshot = getDemoSnapshot(mode);
+  const snapshot = getDemoSnapshot(mode, identity.id);
   if (identity.id === DEMO_AUTH_IDENTITY.id) return snapshot;
   return {
     ...snapshot,
@@ -113,7 +116,7 @@ export async function commitBeforeWithFallback(
     } catch (error) {
       if (error instanceof ResourceOwnershipError) throw error;
       markFailure(error);
-      const local = createDemoSubmission(`demo://uploads/before/${randomUUID()}`);
+      const local = createDemoSubmission(`demo://uploads/before/${randomUUID()}`, identity.id);
       return { ...local, mode: 'fallback-demo' };
     }
   }
@@ -121,18 +124,20 @@ export async function commitBeforeWithFallback(
     beforeRef.startsWith('demo://uploads/')
       ? beforeRef
       : `demo://uploads/before/${randomUUID()}`,
+    identity.id,
   );
   return { ...local, mode: fallbackMode() };
 }
 
 async function localFallbackVerification(
+  identity: AuthIdentity,
   mode: 'seeded-demo' | 'fallback-demo',
 ): Promise<VerificationResult> {
-  const local = createDemoSubmission(`demo://uploads/before/${randomUUID()}`);
-  attachDemoAfter(local.id, `demo://uploads/after/${randomUUID()}`);
+  const local = createDemoSubmission(`demo://uploads/before/${randomUUID()}`, identity.id);
+  attachDemoAfter(local.id, `demo://uploads/after/${randomUUID()}`, identity.id);
   return runVerification(
     { submissionId: local.id },
-    createDemoPipelineDeps(mode),
+    createDemoPipelineDeps(mode, identity.id),
   );
 }
 
@@ -149,23 +154,59 @@ export async function verifyWithFallback(
         createSupabasePipelineDeps(identity.id),
       );
     } catch (error) {
-      if (error instanceof PipelineError || error instanceof ResourceOwnershipError) throw error;
+      if (
+        error instanceof PipelineError ||
+        error instanceof ResourceOwnershipError ||
+        error instanceof ReviewTransitionError
+      ) {
+        throw error;
+      }
       markFailure(error, error instanceof LiveIntegrationError ? error.service : 'supabase');
-      return localFallbackVerification('fallback-demo');
+      return localFallbackVerification(identity, 'fallback-demo');
     }
   }
 
-  if (attachDemoAfter(submissionId, afterRef)) {
+  if (afterRef.startsWith('demo://')) {
+    const demoOwnerId = submissionId === DEMO_IDS.fraudSubmission
+      ? DEMO_IDS.user
+      : identity.id;
+    const attached = attachDemoAfter(submissionId, afterRef, demoOwnerId);
+    if (!attached) {
+      throw new PipelineError('We could not find that cleanup.', 'submission_not_found', 404);
+    }
     return runVerification(
       { submissionId },
-      createDemoPipelineDeps(fallbackMode()),
+      createDemoPipelineDeps(fallbackMode(), demoOwnerId),
     );
   }
 
   // A live workflow can arrive here when its service circuit opened between
-  // upload and verification. Start a coherent local workflow rather than
-  // mixing a Supabase submission with DemoStore state.
-  return localFallbackVerification('fallback-demo');
+  // upload and verification. Only an authenticated Supabase reference may be
+  // converted into a coherent local fallback; invalid demo ids fail closed.
+  if (isSupabaseReference(afterRef)) {
+    return localFallbackVerification(identity, 'fallback-demo');
+  }
+  throw new PipelineError('Upload an after photo first.', 'after_required', 400);
+}
+
+export async function retryHeldWithFallback(
+  identity: AuthIdentity,
+  submissionId: string,
+  reviewId: string,
+): Promise<{ id: string; state: 'before_committed'; mode: DataMode }> {
+  if (shouldUseLiveStack()) {
+    try {
+      const released = await retrySupabaseHeldClaim(identity.id, submissionId, reviewId);
+      return { ...released, mode: 'supabase' };
+    } catch (error) {
+      if (error instanceof ResourceOwnershipError || error instanceof ReviewTransitionError) {
+        throw error;
+      }
+      markFailure(error);
+      throw error;
+    }
+  }
+  return { ...retryHeldClaim(submissionId, reviewId, identity.id), mode: fallbackMode() };
 }
 
 export function resetLocalDemo(identity: AuthIdentity): CampaignPayload {

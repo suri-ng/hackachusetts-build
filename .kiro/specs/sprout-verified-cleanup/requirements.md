@@ -17,7 +17,9 @@ This is a one-day hackathon build. The repository is docs-only, so the TypeScrip
 - **Impact_Screen**: The proof-trail screen showing the student's verified cleanups, the community total, and the sponsor's progress toward payout.
 - **Verification_Pipeline**: The server-side process behind a single `POST /api/verify` request that validates input, detects duplicates, scores geo/time signals, performs Claude assessment, computes a composite verdict, and updates state.
 - **Claude_Assessor**: The server-side Claude multimodal assessment step that evaluates the before and after photos together.
-- **Composite_Verdict**: The server-computed pass/reject decision derived from Claude confidence, geo score, time score, and duplicate flag, expressed as `finalVerdict = f(claudeConfidence, geoScore, timeScore, duplicateFlag)`.
+- **Composite_Verdict**: The server-computed pass/review/reject decision derived from Claude confidence, geo score, time score, and duplicate flag, expressed as `finalVerdict = f(claudeConfidence, geoScore, timeScore, duplicateFlag)`.
+- **Pending_Review**: A no-reward state for borderline, non-duplicate evidence; the exact pair is frozen until an authorized reviewer decides it or the owner withdraws.
+- **Authorized_Reviewer**: An operator authenticated by a server-only bearer token; this role has an API but no product dashboard.
 - **Funded_Bar**: The communal progress bar representing `progress ÷ threshold`, framed in the sponsor's money.
 - **Sponsor_Campaign**: The seeded conditional pledge defined by pool, threshold, and progress, with milestone markers at 25, 50, 75, and 100.
 - **Pool**: The money/value the sponsor puts up (seeded value $500).
@@ -25,7 +27,7 @@ This is a one-day hackathon build. The repository is docs-only, so the TypeScrip
 - **Progress**: The count of verified cleanups so far (seeded starting value 37).
 - **Milestone_Markers**: Fixed visual markers on the Funded_Bar at 25, 50, 75, and 100 verified cleanups.
 - **Submission**: A student's cleanup attempt, holding its before photo, after photo, and state.
-- **Submission_State**: The lifecycle state of a Submission, one of `before_committed` or `complete`.
+- **Submission_State**: The lifecycle state of a Submission, one of `before_committed`, `pending_review`, or `complete`.
 - **Café_Coupon**: The seeded, non-redeemable local café coupon awarded to a student on their first verified cleanup.
 - **Demo_User**: The single hardcoded student account used for the demo; no real login exists.
 - **pHash_Check**: The perceptual-hash duplicate-photo detection step.
@@ -68,6 +70,8 @@ This is a one-day hackathon build. The repository is docs-only, so the TypeScrip
 3. WHILE a Submission is in Submission_State `before_committed`, THE Verify_Screen SHALL present State B prompting the student to upload an after photo.
 4. WHEN a student uploads an after photo for a Submission in Submission_State `before_committed` and the Submission passes the Verification_Pipeline, THE Sprout_System SHALL set Submission_State to `complete`.
 5. IF a student attempts to upload an after photo before a before photo is committed, THEN THE Sprout_System SHALL reject the after upload and prompt the student to commit a before photo first.
+6. WHEN borderline non-duplicate evidence requires review, THE Sprout_System SHALL atomically set Submission_State to `pending_review`, freeze the assessed pair, and award no points, coupon, or Progress.
+7. WHILE Submission_State is `pending_review`, THE Sprout_System SHALL reject evidence replacement and re-verification; an authorized denial or authenticated owner withdrawal SHALL return the same Submission to `before_committed` for a new after photo.
 
 ### Requirement 4: Verification pipeline order and endpoint
 
@@ -77,9 +81,11 @@ This is a one-day hackathon build. The repository is docs-only, so the TypeScrip
 
 1. THE Verification_Pipeline SHALL expose a single server-side endpoint `POST /api/verify`.
 2. WHEN a verification request is received, THE Verification_Pipeline SHALL execute its steps in the order: input validation, pHash_Check, EXIF/geo/time extraction and scoring, Claude_Assessor assessment, Composite_Verdict computation.
-3. WHEN the Composite_Verdict is a pass, THE Verification_Pipeline SHALL perform an atomic idempotent Progress increment, then evaluate the Threshold, then update the pool-unlocked state.
-4. WHEN the Composite_Verdict is a reject, THE Verification_Pipeline SHALL return the rejection with its contributing reasons.
-5. THE Verification_Pipeline SHALL compute the Composite_Verdict on the server from Claude confidence, Geo_Time_Score components, and the duplicate flag, without trusting any client-supplied verdict.
+3. WHEN the Composite_Verdict is `pass`, THE Verification_Pipeline SHALL atomically and idempotently complete the Submission, increment Progress, award configured points, apply the first-cleanup coupon rule, and update pool-unlocked state.
+4. WHEN the Composite_Verdict is `review`, THE Verification_Pipeline SHALL freeze the non-duplicate evidence in `pending_review` and leave every reward and Progress unchanged.
+5. WHEN the Composite_Verdict is `reject`, THE Verification_Pipeline SHALL return the contributing reasons and leave the same before commit retryable without rewards.
+6. IF the duplicate flag is true, THE Composite_Verdict SHALL always be `reject` and SHALL never be human-approvable.
+7. THE Verification_Pipeline SHALL compute pass/review/reject on the server from Claude confidence, Geo_Time_Score components, and the duplicate flag, without trusting client-supplied verdict or reward data.
 
 ### Requirement 5: Input validation and rate limiting
 
@@ -120,15 +126,17 @@ This is a one-day hackathon build. The repository is docs-only, so the TypeScrip
 2. THE Claude_Assessor SHALL return a confidence score and a one-line rationale.
 3. IF the Claude multimodal call returns an error or exceeds its timeout, THEN THE Claude_Assessor SHALL substitute a seeded verdict so that the Verification_Pipeline continues to completion.
 
-### Requirement 9: Verdict feedback on pass and reject
+### Requirement 9: Verdict and review feedback
 
-**User Story:** As a student, I want to see a confidence score and rationale whether my cleanup passes or is rejected, so that the result is transparent and I can retry after a rejection.
+**User Story:** As a student, I want a clear pass, review, or reject explanation and a recovery action when no reward is issued.
 
 #### Acceptance Criteria
 
-1. WHEN the Verification_Pipeline completes, THE Verification_Pipeline SHALL return a confidence score and a one-line rationale for both pass and reject outcomes.
-2. WHEN the Composite_Verdict is a reject, THE Verify_Screen SHALL display the rationale, leave the Funded_Bar unchanged, and offer the student a retry.
-3. WHEN the Composite_Verdict is a pass, THE Verify_Screen SHALL display the rationale and a success state.
+1. WHEN verification completes, THE Verify_Screen SHALL display a confidence score and one-line rationale for pass, review, and reject outcomes.
+2. WHEN the Composite_Verdict is `reject`, THE Verify_Screen SHALL leave the Funded_Bar unchanged and offer an after-photo retry.
+3. WHEN the Composite_Verdict is `review`, THE Verify_Screen SHALL show a warning-styled pending state, disclose authorized human inspection, show no reward, and offer authenticated owner withdrawal for retry.
+4. WHILE review remains pending, THE Mission_Detail_Screen and Verify_Screen SHALL expose owner-visible status without adding a fifth product route.
+5. WHEN the Composite_Verdict is `pass`, THE Verify_Screen SHALL display the rationale and success state.
 
 ### Requirement 10: Communal funded bar reward
 
@@ -157,8 +165,9 @@ This is a one-day hackathon build. The repository is docs-only, so the TypeScrip
 
 #### Acceptance Criteria
 
-1. WHEN a passing Submission triggers a Progress increment, THE Verification_Pipeline SHALL apply the increment atomically.
-2. IF the same passing Submission is submitted for increment more than once, THEN THE Verification_Pipeline SHALL apply the Progress increment at most once for that Submission.
+1. WHEN an automatic pass or authorized human approval triggers Progress, THE database transition SHALL complete the Submission, apply the progress/points/coupon effects, and update pool state atomically.
+2. IF automatic or human approval is retried or races for the same Submission, THEN THE database SHALL apply Progress and rewards at most once.
+3. WHEN review is denied or withdrawn, THE transition SHALL award nothing and SHALL return the same Submission to `before_committed` with its original before evidence.
 
 ### Requirement 13: Platform hardening
 
@@ -166,9 +175,12 @@ This is a one-day hackathon build. The repository is docs-only, so the TypeScrip
 
 #### Acceptance Criteria
 
-1. THE Sprout_System SHALL hold the Claude API key server-side only and SHALL exclude the Claude API key from the client bundle.
-2. THE Sprout_System SHALL enforce storage access control through data-store row-level security and signed upload URLs.
-3. THE Sprout_System SHALL validate upload file type and file size before storing an upload.
+1. THE Sprout_System SHALL keep Claude, Supabase service-role, and reviewer bearer credentials server-side without a `NEXT_PUBLIC_` prefix.
+2. THE Sprout_System SHALL keep evidence in a private bucket and perform owner-scoped upload/download operations through server-only code.
+3. THE Sprout_System SHALL validate upload file type, decoded format, dimensions, pixel count, and file size before storing an upload.
+4. THE `/api/review` endpoint SHALL fail closed unless a configured bearer token of at least 32 characters matches in constant time; request data SHALL NOT select reviewer identity.
+5. AFTER reviewer authorization, live evidence SHALL be exposed only through read-only signed URLs that expire within five minutes.
+6. THE versioned consent notice SHALL disclose Claude processing and exceptional inspection by an authorized human before evidence can enter review.
 
 ### Requirement 14: Four screens
 
@@ -178,7 +190,7 @@ This is a one-day hackathon build. The repository is docs-only, so the TypeScrip
 
 1. THE Sprout_System SHALL provide a Campaign_Home presenting the sponsor identity, the pledge, the Funded_Bar with Milestone_Markers, a latest-verified-cleanups feed, and a "Verify a cleanup" call to action.
 2. THE Sprout_System SHALL provide a Mission_Detail_Screen presenting the mission instructions, the before/after photo guidance, the sponsor, and the cleanup's contribution, with a call to action to the Verify_Screen.
-3. THE Sprout_System SHALL provide a Verify_Screen with State A for committing the before photo and State B for uploading the after photo and viewing the verdict.
+3. THE Sprout_System SHALL provide one Verify_Screen route containing before commit, after upload, processing, pass/review/reject feedback, pending status, and owner withdrawal/retry states.
 4. THE Sprout_System SHALL provide an Impact_Screen presenting the Demo_User's verified cleanups, the community total, and the sponsor's progress toward payout.
 
 ### Requirement 15: Seeded demo data and reset
@@ -222,5 +234,21 @@ This is a one-day hackathon build. The repository is docs-only, so the TypeScrip
 
 1. THE Sprout_System SHALL exclude leaderboards, badges, levels, and streaks.
 2. THE Sprout_System SHALL exclude mission types other than litter cleanup of a defined area.
-3. THE Sprout_System SHALL exclude real payment processing and an organizer dashboard.
+3. THE Sprout_System SHALL exclude real payment processing and organizer/reviewer dashboards; the authenticated operator API SHALL NOT add a product screen.
 4. THE Sprout_System SHALL exclude magnitude and tier scoring and real redeemable coupon codes.
+5. Human review SHALL remain limited to borderline non-duplicate evidence and SHALL NOT override duplicate rejection.
+
+
+### Requirement 19: Authorized review resolution
+
+**User Story:** As a sponsor and student, I want borderline evidence resolved securely and exactly once, so that review cannot weaken the funded ledger.
+
+#### Acceptance Criteria
+
+1. GET and POST `/api/review` SHALL authenticate the operator before reading metadata, signing evidence, or mutating a Submission.
+2. WHEN a non-duplicate Submission enters `pending_review`, THE database SHALL generate an immutable `review_id`, bind it to the current after reference plus persisted pHashes/metadata/verdict fields, and append a held audit row.
+3. WHEN an Authorized_Reviewer approves a held Submission, the request SHALL include that `review_id` and one database transaction SHALL lock and match it, set the Submission to `complete`, increment Progress once, award configured points once, apply the first-cleanup coupon rule, and append an approval audit row.
+4. WHEN an Authorized_Reviewer denies a held Submission using the matching `review_id`, the transaction SHALL award nothing, append reviewer audit attribution/time and the frozen after reference, preserve the committed before photo, clear the active after evidence, and return it to `before_committed`.
+5. WHEN the authenticated owner withdraws a held Submission using its matching `review_id`, the transition SHALL append a withdrawal audit row, award nothing, and reopen that same committed-before Submission for a new after photo.
+6. Repeated approval SHALL be idempotent; stale approve, deny, or withdrawal attempts SHALL not mutate evidence or rewards.
+7. Mission and Verify SHALL expose pending or denied status and an appropriate recovery action without adding a reviewer dashboard or product route.

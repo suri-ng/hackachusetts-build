@@ -18,6 +18,9 @@ import type {
   CampaignPayload,
   CouponView,
   FeedItem,
+  ReviewDecisionResult,
+  ReviewQueueClaim,
+  ReviewStatusView,
 } from './domain';
 import { extractExif, geoTimeScore, type ExifMeta } from './geotime';
 import {
@@ -54,6 +57,22 @@ export class ResourceOwnershipError extends Error {
     super('This cleanup does not belong to the signed-in account.');
     this.name = 'ResourceOwnershipError';
   }
+}
+
+export class ReviewTransitionError extends Error {
+  constructor(message = 'This review is no longer current.') {
+    super(message);
+    this.name = 'ReviewTransitionError';
+  }
+}
+
+function integrationErrorText(error: unknown): string {
+  if (!error || typeof error !== 'object') return '';
+  const value = error as { message?: unknown; details?: unknown; hint?: unknown; code?: unknown };
+  return [value.message, value.details, value.hint, value.code]
+    .filter((part): part is string => typeof part === 'string')
+    .join(' ')
+    .toLowerCase();
 }
 
 function numberValue(value: unknown, fallback: number): number {
@@ -136,32 +155,62 @@ export async function getSupabaseSnapshot(identity: AuthIdentity): Promise<Campa
   await ensureBaseRows(identity);
   const ownerId = identity.id;
   const db = getSupabaseAdminClient();
-  const [campaignResult, userResult, couponResult, pendingResult, feedResult] =
-    await Promise.all([
-      db.from('campaign').select('*').eq('id', DEMO_IDS.campaign).single(),
-      db.from('demo_user').select('*').eq('id', ownerId).single(),
-      db.from('cafe_coupon').select('*').eq('id', DEMO_COUPON.id).single(),
-      db
-        .from('submission')
-        .select('id')
-        .eq('user_id', ownerId)
-        .eq('campaign_id', DEMO_IDS.campaign)
-        .eq('state', 'before_committed')
-        .is('after_ref', null)
-        .order('committed_at', { ascending: false })
-        .limit(1),
-      db
-        .from('submission')
-        .select('id,user_id,completed_at,confidence,points_awarded')
-        .eq('campaign_id', DEMO_IDS.campaign)
-        .eq('state', 'complete')
-        .eq('verdict_pass', true)
-        .order('completed_at', { ascending: false })
-        .limit(12),
-    ]);
+  const [
+    campaignResult,
+    userResult,
+    couponResult,
+    pendingResult,
+    pendingReviewResult,
+    reviewedResult,
+    feedResult,
+  ] = await Promise.all([
+    db.from('campaign').select('*').eq('id', DEMO_IDS.campaign).single(),
+    db.from('demo_user').select('*').eq('id', ownerId).single(),
+    db.from('cafe_coupon').select('*').eq('id', DEMO_COUPON.id).single(),
+    db
+      .from('submission')
+      .select('id')
+      .eq('user_id', ownerId)
+      .eq('campaign_id', DEMO_IDS.campaign)
+      .eq('state', 'before_committed')
+      .is('after_ref', null)
+      .order('committed_at', { ascending: false })
+      .limit(1),
+    db
+      .from('submission')
+      .select('id,review_id,rationale,committed_at')
+      .eq('user_id', ownerId)
+      .eq('campaign_id', DEMO_IDS.campaign)
+      .eq('state', 'pending_review')
+      .order('committed_at', { ascending: false })
+      .limit(1),
+    db
+      .from('submission')
+      .select('id,review_id,rationale,review_decision,reviewed_at')
+      .eq('user_id', ownerId)
+      .eq('campaign_id', DEMO_IDS.campaign)
+      .in('review_decision', ['approved', 'denied'])
+      .order('reviewed_at', { ascending: false })
+      .limit(1),
+    db
+      .from('submission')
+      .select('id,user_id,completed_at,confidence,points_awarded')
+      .eq('campaign_id', DEMO_IDS.campaign)
+      .eq('state', 'complete')
+      .eq('verdict_pass', true)
+      .order('completed_at', { ascending: false })
+      .limit(12),
+  ]);
 
-  const error = [campaignResult, userResult, couponResult, pendingResult, feedResult]
-    .find((result) => result.error)?.error;
+  const error = [
+    campaignResult,
+    userResult,
+    couponResult,
+    pendingResult,
+    pendingReviewResult,
+    reviewedResult,
+    feedResult,
+  ].find((result) => result.error)?.error;
   if (error || !campaignResult.data || !userResult.data || !couponResult.data) {
     throw new LiveIntegrationError('supabase', 'Could not read Sprout data.');
   }
@@ -189,6 +238,35 @@ export async function getSupabaseSnapshot(identity: AuthIdentity): Promise<Campa
     ...liveFeed,
     ...DEMO_FEED.filter((item) => !existingIds.has(item.id)),
   ].slice(0, 12);
+
+  const pendingReviewRow = pendingReviewResult.data?.[0] as Record<string, unknown> | undefined;
+  const reviewedRow = reviewedResult.data?.[0] as Record<string, unknown> | undefined;
+  let reviewStatus: ReviewStatusView | undefined;
+  if (pendingReviewRow) {
+    reviewStatus = {
+      submissionId: stringValue(pendingReviewRow.id, ''),
+      reviewId: stringValue(pendingReviewRow.review_id, ''),
+      status: 'pending',
+      rationale: stringValue(pendingReviewRow.rationale, 'This cleanup is awaiting review.'),
+      updatedAt: stringValue(pendingReviewRow.committed_at, new Date().toISOString()),
+    };
+  } else if (
+    reviewedRow &&
+    (reviewedRow.review_decision === 'approved' || reviewedRow.review_decision === 'denied')
+  ) {
+    reviewStatus = {
+      submissionId: stringValue(reviewedRow.id, ''),
+      ...(reviewedRow.review_id ? { reviewId: String(reviewedRow.review_id) } : {}),
+      status: reviewedRow.review_decision,
+      rationale: stringValue(
+        reviewedRow.rationale,
+        reviewedRow.review_decision === 'approved'
+          ? 'An authorized reviewer approved this cleanup.'
+          : 'An authorized reviewer requested a clearer after photo.',
+      ),
+      updatedAt: stringValue(reviewedRow.reviewed_at, new Date().toISOString()),
+    };
+  }
 
   return {
     campaign: {
@@ -229,6 +307,7 @@ export async function getSupabaseSnapshot(identity: AuthIdentity): Promise<Campa
       '',
     ),
     fraudSubmissionId: DEMO_IDS.fraudSubmission,
+    ...(reviewStatus ? { reviewStatus } : {}),
     mode: 'supabase',
     aiMode: 'claude',
     generatedAt: new Date().toISOString(),
@@ -337,9 +416,16 @@ export async function attachSupabaseAfter(
   afterRef: string,
 ): Promise<void> {
   const path = ownedStoragePath(afterRef, ownerId);
-  const { data, error } = await getSupabaseAdminClient()
+  const db = getSupabaseAdminClient();
+  const { data, error } = await db
     .from('submission')
-    .update({ after_ref: path })
+    .update({
+      after_ref: path,
+      review_id: null,
+      review_decision: null,
+      reviewed_by: null,
+      reviewed_at: null,
+    })
     .eq('id', submissionId)
     .eq('user_id', ownerId)
     .eq('campaign_id', DEMO_IDS.campaign)
@@ -347,7 +433,32 @@ export async function attachSupabaseAfter(
     .select('id')
     .maybeSingle();
   if (error) throw new LiveIntegrationError('supabase', 'Could not attach the after photo.');
-  if (!data) throw new ResourceOwnershipError();
+  if (data) return;
+
+  // A zero-row guarded update can mean either ownership failure or a legal
+  // lifecycle conflict. Resolve that distinction without exposing row details.
+  const current = await db
+    .from('submission')
+    .select('user_id,campaign_id,state')
+    .eq('id', submissionId)
+    .maybeSingle();
+  if (current.error) {
+    throw new LiveIntegrationError('supabase', 'Could not inspect the submission state.');
+  }
+  if (
+    !current.data ||
+    current.data.user_id !== ownerId ||
+    current.data.campaign_id !== DEMO_IDS.campaign
+  ) {
+    throw new ResourceOwnershipError();
+  }
+  if (current.data.state === 'pending_review') {
+    throw new ReviewTransitionError('This cleanup is awaiting review and its evidence is frozen.');
+  }
+  if (current.data.state === 'complete') {
+    throw new ReviewTransitionError('This cleanup is already complete.');
+  }
+  throw new ReviewTransitionError('This cleanup cannot accept an after photo right now.');
 }
 
 interface EvidenceBundle {
@@ -397,18 +508,32 @@ export function createSupabasePipelineDeps(ownerId: string): PipelineDeps {
         .maybeSingle();
       if (error) throw new LiveIntegrationError('supabase', 'Could not load the submission.');
       if (!data) return null;
+      const rawState = String(data.state);
+      if (
+        rawState !== 'before_committed' &&
+        rawState !== 'pending_review' &&
+        rawState !== 'complete'
+      ) {
+        throw new LiveIntegrationError('supabase', 'Submission has an invalid lifecycle state.');
+      }
       return {
         id: String(data.id),
         userId: String(data.user_id),
         campaignId: String(data.campaign_id),
         beforeRef: String(data.before_ref || ''),
         afterRef: data.after_ref ? String(data.after_ref) : null,
-        state: data.state === 'complete' ? 'complete' : 'before_committed',
+        state: rawState,
         counted: Boolean(data.counted),
       };
     },
 
     async validateSubmission(submission) {
+      if (submission.state === 'pending_review') {
+        throw new Error('This cleanup is already awaiting review.');
+      }
+      if (submission.state === 'complete' && !submission.counted) {
+        throw new Error('This cleanup has an invalid completion state.');
+      }
       if (!submission.beforeRef) throw new Error('A committed before photo is required.');
       if (!submission.afterRef) throw new Error('Add an after photo before verification.');
       if (submission.userId !== ownerId || submission.campaignId !== DEMO_IDS.campaign) {
@@ -548,5 +673,170 @@ export function createSupabasePipelineDeps(ownerId: string): PipelineDeps {
         pointsBalance: numberValue(user.data.points_balance, DEMO_USER.pointsBalance),
       };
     },
+
+    async recordReview(submission, result) {
+      const current = await evidence(submission);
+      const { data: reviewIdData, error } = await db.rpc('hold_for_review', {
+        p_submission_id: submission.id,
+        p_after_ref: submission.afterRef,
+        p_confidence: result.confidence,
+        p_rationale: result.rationale,
+        p_reasons: result.reasons,
+        p_assessor_source: 'claude',
+        p_before_phash: current.beforePhash,
+        p_after_phash: current.afterPhash,
+        p_before_lat: current.beforeMeta.lat ?? null,
+        p_before_lon: current.beforeMeta.lon ?? null,
+        p_before_taken_at: current.beforeMeta.takenAt?.toISOString() ?? null,
+        p_after_lat: current.afterMeta.lat ?? null,
+        p_after_lon: current.afterMeta.lon ?? null,
+        p_after_taken_at: current.afterMeta.takenAt?.toISOString() ?? null,
+      });
+      if (error) {
+        const detail = integrationErrorText(error);
+        if (detail.includes('after_evidence_changed') || detail.includes('submission_not_ready')) {
+          throw new ReviewTransitionError('The evidence changed before it could be held. Try again.');
+        }
+        throw new LiveIntegrationError('supabase', 'Could not hold the claim for review.');
+      }
+      const reviewId = typeof reviewIdData === 'string'
+        ? reviewIdData
+        : Array.isArray(reviewIdData) && typeof reviewIdData[0] === 'string'
+          ? reviewIdData[0]
+          : '';
+      if (!reviewId) throw new LiveIntegrationError('supabase', 'Review hold returned no identity.');
+      const [campaign, user] = await Promise.all([
+        db.from('campaign').select('pool,threshold,progress').eq('id', submission.campaignId).single(),
+        db.from('demo_user').select('points_balance').eq('id', submission.userId).single(),
+      ]);
+      if (campaign.error || user.error || !campaign.data || !user.data) {
+        throw new LiveIntegrationError('supabase', 'Could not read the unchanged campaign.');
+      }
+      const progress = numberValue(campaign.data.progress, DEMO_CAMPAIGN.progress);
+      return {
+        progress,
+        unlockedValue: Math.min(
+          numberValue(campaign.data.pool, DEMO_CAMPAIGN.pool),
+          unlockedValue(
+            numberValue(campaign.data.pool, DEMO_CAMPAIGN.pool),
+            progress,
+            numberValue(campaign.data.threshold, DEMO_CAMPAIGN.threshold),
+          ),
+        ),
+        pointsBalance: numberValue(user.data.points_balance, DEMO_USER.pointsBalance),
+        reviewId,
+      };
+    },
   };
+}
+
+const REVIEW_URL_TTL_SECONDS = 5 * 60;
+
+/** Return only frozen pending claims, with short-lived read-only evidence URLs. */
+export async function listSupabaseHeldClaims(): Promise<ReviewQueueClaim[]> {
+  const db = getSupabaseAdminClient();
+  const { data, error } = await db
+    .from('submission')
+    .select('id,review_id,before_ref,after_ref,confidence,rationale,reasons,committed_at')
+    .eq('state', 'pending_review')
+    .eq('counted', false)
+    .order('committed_at', { ascending: true })
+    .limit(100);
+  if (error) throw new LiveIntegrationError('supabase', 'Could not load held claims.');
+
+  return Promise.all(((data ?? []) as Array<Record<string, unknown>>).map(async (row) => {
+    const reviewId = stringValue(row.review_id, '');
+    const beforePath = stringValue(row.before_ref, '');
+    const afterPath = stringValue(row.after_ref, '');
+    if (!reviewId || !beforePath || !afterPath) {
+      throw new LiveIntegrationError('supabase', 'A held claim has incomplete evidence.');
+    }
+    const [before, after] = await Promise.all([
+      db.storage.from(BUCKET).createSignedUrl(beforePath, REVIEW_URL_TTL_SECONDS),
+      db.storage.from(BUCKET).createSignedUrl(afterPath, REVIEW_URL_TTL_SECONDS),
+    ]);
+    if (before.error || after.error || !before.data?.signedUrl || !after.data?.signedUrl) {
+      throw new LiveIntegrationError('supabase', 'Could not authorize review evidence.');
+    }
+    return {
+      id: stringValue(row.id, ''),
+      reviewId,
+      confidence: numberValue(row.confidence, 0),
+      rationale: stringValue(row.rationale, 'Held for review.'),
+      reasons: Array.isArray(row.reasons)
+        ? row.reasons.filter((reason): reason is string => typeof reason === 'string')
+        : [],
+      committedAt: stringValue(row.committed_at, new Date().toISOString()),
+      beforePhotoUrl: before.data.signedUrl,
+      afterPhotoUrl: after.data.signedUrl,
+    };
+  }));
+}
+
+/** Resolve one frozen held claim through the database's atomic transition. */
+export async function resolveSupabaseHeldClaim(
+  submissionId: string,
+  reviewId: string,
+  reviewerId: string,
+  approve: boolean,
+): Promise<ReviewDecisionResult> {
+  const { data, error } = await getSupabaseAdminClient().rpc('resolve_held_claim', {
+    p_submission_id: submissionId,
+    p_review_id: reviewId,
+    p_reviewer: reviewerId,
+    p_approve: approve,
+  });
+  if (error) {
+    const detail = integrationErrorText(error);
+    if (
+      detail.includes('no_held_claim') ||
+      detail.includes('submission_not_found') ||
+      detail.includes('submission_already_claimed') ||
+      detail.includes('review_id_required')
+    ) {
+      throw new ReviewTransitionError();
+    }
+    throw new LiveIntegrationError('supabase', 'Could not resolve held claim.');
+  }
+  const row = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | null;
+  if (!row) throw new LiveIntegrationError('supabase', 'Review returned no decision.');
+  const decision = row.decision;
+  if (decision !== 'approved' && decision !== 'denied') {
+    throw new LiveIntegrationError('supabase', 'Review returned an invalid decision.');
+  }
+  return {
+    decision,
+    previousProgress: numberValue(row.previous_progress, DEMO_CAMPAIGN.progress),
+    progress: numberValue(row.progress, DEMO_CAMPAIGN.progress),
+    unlockedValue: numberValue(row.unlocked_value, 0),
+    poolUnlocked: Boolean(row.pool_unlocked),
+    pointsAwarded: numberValue(row.points_awarded_now, 0),
+    pointsBalance: numberValue(row.points_balance, DEMO_USER.pointsBalance),
+    couponAwarded: Boolean(row.coupon_awarded_now),
+    wasCounted: Boolean(row.was_counted),
+  };
+}
+
+/** Release the owner's pending claim for a new after-photo attempt. */
+export async function retrySupabaseHeldClaim(
+  ownerId: string,
+  submissionId: string,
+  reviewId: string,
+): Promise<{ id: string; state: 'before_committed' }> {
+  const { error } = await getSupabaseAdminClient().rpc('retry_held_claim', {
+    p_submission_id: submissionId,
+    p_review_id: reviewId,
+    p_owner_id: ownerId,
+  });
+  if (error) {
+    const detail = integrationErrorText(error);
+    if (detail.includes('submission_not_found_or_not_owner')) {
+      throw new ResourceOwnershipError();
+    }
+    if (detail.includes('no_held_claim') || detail.includes('review_id_required')) {
+      throw new ReviewTransitionError();
+    }
+    throw new LiveIntegrationError('supabase', 'Could not reopen held claim.');
+  }
+  return { id: submissionId, state: 'before_committed' };
 }

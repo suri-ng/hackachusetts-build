@@ -102,8 +102,8 @@ Tasks are ordered so an end-to-end demoable slice — scaffold → data → pure
 
 - [ ] 5. Implement the verification pipeline orchestration (`lib/pipeline.ts`)
   - [ ] 5.1 Implement `runVerification` in the fixed §9a order
-    - Order: input validation (type/size + rate limit, fail-fast) → pHash → EXIF/geo/time → Claude → `compositeVerdict`; on PASS: `increment_progress` → threshold check → pool-unlocked update → first-cleanup coupon award (at-most-once) → set `submission.state = complete`; on REJECT: return reasons, progress untouched; respond with confidence + rationale on BOTH outcomes
-    - _Requirements: 3.4, 4.2, 4.3, 4.4, 5.1, 5.2, 5.3, 8.2, 9.1, 9.2, 10.3, 11.1, 11.3, 12.1, 12.2, 13.3, 16.2_
+    - Order: owner/state/image/rate validation → pHash → EXIF/geo/time → Claude → `compositeVerdict`; PASS atomically completes and rewards; REVIEW freezes exact non-duplicate evidence in `pending_review` with no reward; REJECT returns reasons and keeps the before commit retryable. Every domain outcome includes confidence + rationale.
+    - _Requirements: 3.4–3.7, 4.2–4.7, 5.1–5.3, 8.1–8.3, 9.1–9.5, 12, 13, 19_
 
   - [ ]* 5.2 Write property test for fixed step/action order
     - **Property 8: The pipeline executes its steps in the fixed order**
@@ -129,8 +129,8 @@ Tasks are ordered so an end-to-end demoable slice — scaffold → data → pure
     - **Property 3: A reject leaves progress unchanged**
     - **Validates: Requirements 1.3, 9.2, 16.2**
 
-  - [ ]* 5.8 Write property test for confidence + rationale on both outcomes
-    - **Property 18: Confidence and rationale are returned on both outcomes**
+  - [ ]* 5.8 Write property test for confidence + rationale on all outcomes
+    - **Property 18: Confidence and rationale are returned on pass, review, and reject**
     - **Validates: Requirements 8.2, 9.1**
 
   - [ ]* 5.9 Write property test for coupon awarded exactly once
@@ -142,7 +142,7 @@ Tasks are ordered so an end-to-end demoable slice — scaffold → data → pure
 
 - [ ] 7. Implement the API route handlers (`app/api/`)
   - [ ] 7.1 Implement `POST /api/upload-url`
-    - Validate intended file type/size, return a Supabase signed upload URL
+    - Validate multipart image bytes and retain them through the owner-scoped server-side storage adapter
     - _Requirements: 13.2, 13.3_
 
   - [ ] 7.2 Implement `POST /api/verify` and State A before-commit handling
@@ -150,13 +150,17 @@ Tasks are ordered so an end-to-end demoable slice — scaffold → data → pure
     - _Requirements: 3.2, 3.4, 3.5, 4.1_
 
   - [ ] 7.3 Implement `GET /api/campaign`
-    - Return campaign state (pool/threshold/progress/pool_unlocked/milestones) + latest-verified feed for Home/Impact
-    - _Requirements: 2.2, 17.2, 17.3_
+    - Return campaign state, latest-verified feed, and owner-visible pending/decided review status for Home/Mission/Verify
+    - _Requirements: 2.2, 9.4, 14, 19.7_
 
-  - [ ]* 7.4 Write example/integration tests for before-commit state and routes
+  - [ ] 7.4 Implement secured review transitions
+    - Add fail-closed bearer-token `GET/POST /api/review`, five-minute signed live evidence reads, atomic approve/deny RPCs, and authenticated owner withdrawal through `PATCH /api/submissions`
+    - _Requirements: 3.6, 3.7, 12, 13.4–13.6, 19_
+
+  - [ ]* 7.5 Write example/integration tests for before-commit state and routes
     - **Property 6: Before-commit yields a timestamped before_committed submission** (Validates 3.2)
     - **Property 7: After-upload on a passing before_committed submission completes it** (Validates 3.4)
-    - After-upload-with-no-committed-before guard (3.5); `/api/verify` route exists (4.1); signed-URL + RLS smoke (13.2)
+    - After-upload-with-no-committed-before guard (3.5); `/api/verify` route exists (4.1); private owner-scoped storage smoke (13.2)
     - _Requirements: 3.2, 3.4, 3.5, 4.1, 13.2_
 
 - [ ] 8. Build Campaign Home (`/`) — the hero screen, NEVER cut
@@ -168,14 +172,14 @@ Tasks are ordered so an end-to-end demoable slice — scaffold → data → pure
     - Assert pool/threshold/progress/unlocked-value/markers/next-milestone/feed/CTA render; bar fill proportional
     - _Requirements: 2.2, 2.3, 2.4, 2.5, 14.1_
 
-- [ ] 9. Build the Verify screen (`/verify`) — two-state engine
-  - [ ] 9.1 Implement State A (before-commit) and State B (after-upload + verdict)
-    - State A: upload before → "locked in" + timestamp; State B: upload after → call `/api/verify` → show confidence + rationale on pass AND reject; on pass: success animation + café coupon card + hand back to Home for the bar tick; on reject: show rationale, leave bar unchanged, offer retry
-    - _Requirements: 3.3, 9.2, 9.3, 11.2, 14.3_
+- [ ] 9. Build the Verify screen (`/verify`) — capture, outcome, and recovery
+  - [ ] 9.1 Implement before/after capture plus pass/review/reject states
+    - Commit before, submit after, show confidence+rationale; pass reveals rewards, reject offers retry, and warning-styled review shows zero reward plus owner withdrawal/retry. Pending status remains on `/verify`.
+    - _Requirements: 3.3–3.7, 9, 11, 14.3, 19.7_
 
-  - [ ]* 9.2 Write component tests for Verify two-state + coupon card
-    - State A/State B rendering; pass success + coupon card; reject rationale + retry + bar unchanged
-    - _Requirements: 9.2, 9.3, 11.2, 14.3_
+  - [ ]* 9.2 Write component tests for Verify outcomes and recovery
+    - Cover before/after, pass reward, reject retry, pending warning/no-reward, human-access consent, and owner withdrawal.
+    - _Requirements: 9, 11.2, 13.6, 14.3, 19.7_
 
 - [ ] 10. Build Mission Detail (`/mission`)
   - [ ] 10.1 Implement Mission Detail screen

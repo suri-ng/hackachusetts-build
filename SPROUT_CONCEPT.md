@@ -1,10 +1,10 @@
 # Sprout — Concept Brief (Working Draft)
 
-> **Status:** Live Claude vision and Supabase retention implemented with automatic local-demo fallback.
+> **Status:** Live Claude vision, Supabase retention, and a secured human-review fallback are implemented with automatic local-demo fallback.
 > **Event:** One-day hackathon · Energy & Climate Tech track.
 > **Read this first** if you're a teammate (or a teammate's Kiro) joining the project.
 
-> **What's actually in the repo right now:** a complete Next.js/TypeScript app with four responsive screens, real binary photo uploads, Claude before/after analysis, Supabase Storage/Postgres retention, points/multiplier gamification, anti-fraud checks, atomic reward finalization, and automatic local fallback. Credentials and the Supabase schema still need to be configured per `README.md` and `.env.local.example`.
+> **What's actually in the repo right now:** a complete Next.js/TypeScript app with four responsive screens, real photo uploads, Claude before/after analysis, pass/review/reject triage, token-authorized review of borderline evidence, Supabase Storage/Postgres retention, points/multiplier gamification, anti-fraud checks, atomic reward finalization, and automatic local fallback. Credentials and the Supabase schema still need to be configured per `README.md` and `.env.local.example`.
 
 ---
 
@@ -150,7 +150,7 @@ The **sponsor is the hero of the NARRATIVE**; the **student phone is the INSTRUM
 2. **Mission Detail** — what to do, what to photograph (before + after of the same spot), the sponsor, what your cleanup contributes. CTA → Verify.
 3. **Verify (the engine) — TWO states:**
    - **State A (Before):** "Upload your before photo to start." Upload → "Before locked in at 2:14pm. Go clean, then come back." Submission becomes `before_committed` (pending).
-   - **State B (After):** returning to a pending submission → "Upload your after photo" → submit → Claude verifies before+after together → **confidence + one-line rationale shown either way** → on pass: success animation + personal café coupon unlocks → hands back to Home where the funded bar ticks up.
+   - **State B (After):** returning to a pending submission → "Upload your after photo" → submit → Claude verifies before+after together → **confidence + one-line rationale shown either way** → clear passes unlock the reward; duplicates/conclusive failures reject with retry; borderline non-duplicate evidence is frozen in `pending_review` with no reward and an owner withdrawal/retry option.
 4. **Impact / Proof trail** — your verified cleanups, the community total, the sponsor's progress toward payout, framed as the **credible proof trail a sponsor gets instead of a PDF.** This screen sells the sponsor value even though a student holds the phone.
 
 ### End-to-end demo script
@@ -185,7 +185,7 @@ Four screens + Claude + Supabase + a genuinely polished animated bar is a full o
 The before photo is uploaded and **committed/timestamped FIRST**, before the cleanup happens. The after is uploaded only after the student returns. This raises the cost of the classic staging scam (find a clean spot → dump trash → shoot "before" → remove your own trash → shoot "after"), because the before is locked in up front rather than fabricated after the fact alongside the after.
 - **Honest framing (say it this way):** "Committing the before first raises the cost of staging. It is NOT fraud-proof — timestamp / geolock / same-device checks are the next layer." Do not claim this prevents fraud; it just makes cheating harder.
 - **What it does NOT prove:** location continuity (before at spot A, after at spot B) or that the same mess was actually cleaned. Still assistive, not conclusive.
-- **Submission gains state:** a submission is now either `before_committed` (awaiting after) or `complete`. This is the only new data concept the feature adds — no new screen, no change to the Claude/escrow logic.
+- **Submission gains one guarded hold state:** `before_committed` awaits or retries an after photo, `pending_review` freezes an inconclusive pair, and `complete` is terminal after an automatic or human approval. Review status and withdrawal stay inside the existing Mission/Verify screens; no dashboard or fifth product route is added.
 
 ---
 
@@ -212,13 +212,13 @@ Optimized for one-day speed and demo reliability. The app automatically uses Cla
 **Screens (4):** see §6a for the full breakdown + demo script.
 1. **Campaign Home** — sponsor's funded progress bar (hero), goal/threshold, milestone markers, community feed, "verify a cleanup" CTA.
 2. **Mission Detail** — instructions, what to photograph (before/after), the sponsor, the reward pool.
-3. **Verify (two states)** — State A: commit BEFORE first (locked + timestamped). State B: upload AFTER → Claude assessment with confidence + rationale → pass → coupon + animated contribution to the funded bar.
+3. **Verify (existing route, four stages)** — commit BEFORE, upload AFTER, run Claude/integrity checks, then render pass/review/reject. Pass reveals coupon + contribution; reject offers retry; review shows a warning hold with no reward and lets the owner withdraw for clearer photos.
 4. **Impact / proof trail** — verified cleanups, community total, sponsor's progress toward payout. (First to cut if time-constrained — fold into Campaign Home.)
 
 ### Must-have (the demo breaks without these)
-- Two-step **before-first / after** upload with submission state (`before_committed` → `complete`).
-- **Claude assessment** returning confidence + one-line rationale on both pass AND reject.
-- **Reject / low-confidence path handled gracefully** — show the rationale, do NOT advance the funded bar, let the user retry. (Critical: protects the demo if a judge uploads a bad/fake photo.)
+- Before-first / after upload with guarded transitions (`before_committed` → `pending_review` or `complete`).
+- **Claude assessment** returning confidence + one-line rationale for pass, review, and reject.
+- **Reject / review recovery handled gracefully** — show the rationale, never advance the funded bar without approval, let rejects retry immediately, and let owners withdraw pending evidence to retry.
 - **Funded progress bar animation** (the hero moment — gets the polish budget).
 - **One seeded sponsor campaign** (pool, threshold, current progress, milestone markers).
 - **Personal milestone café coupon** firing on the first verified cleanup.
@@ -233,7 +233,7 @@ Optimized for one-day speed and demo reliability. The app automatically uses Cla
 - **XP → secondary signal, not the headline** (optional to show at all).
 
 ### Cut entirely
-Leaderboards, badges, levels, streaks, multiple mission types, real payments, organizer dashboard, magnitude/tier scoring, real redeemable coupon codes. (Note: EXIF/geo fraud detection is NOT cut — it moved into the MVP as a scoped soft-signal check; see §9a.)
+Leaderboards, badges, levels, streaks, multiple mission types, real payments, organizer/reviewer dashboards, magnitude/tier scoring, and real redeemable coupon codes. A token-protected server API for exceptional review is allowed, but it is not a product screen and never overrides duplicate rejection.
 
 ---
 
@@ -248,12 +248,16 @@ Every security feature here strengthens the core differentiator — making the s
    `finalVerdict = f(claudeConfidence, geoScore, timeScore, duplicateFlag)`.
 
 **Invisible platform hardening (no new screens):**
-- Claude API key server-side only (never in the client bundle)
-- Supabase storage access control / RLS + signed upload URLs
-- Upload input validation (file type, size)
-- Submission rate limiting
+- Claude and Supabase service credentials stay server-side
+- Private Supabase storage with owner-scoped server uploads/downloads
+- Versioned consent covers Claude plus exceptional authorized human inspection
+- `SPROUT_REVIEW_TOKEN` is a 32+ character server-only bearer secret; missing/invalid authorization reveals nothing
+- Review reads use five-minute, read-only signed URLs for the exact held objects
+- Pending state blocks evidence replacement or re-verification; a generated `review_id` binds every decision to that exact hold
+- Append-only `review_audit` rows preserve held/approved/denied/withdrawn history across retries
+- Upload validation and submission rate limiting
 
-**Pipeline order (one `POST /api/verify`):** input validation (type/size + rate limit) → pHash duplicate check → EXIF/geo/time extract + score → Claude multimodal assess → composite verdict → if pass: atomic idempotent bar increment → threshold check → "pool unlocked" state; if fail: reject with reasons.
+**Pipeline order (one `POST /api/verify`):** input validation (ownership/state/type/size/rate) → pHash duplicate check → EXIF/geo/time score → Claude multimodal assessment → composite outcome. Pass uses atomic idempotent finalization; duplicate/conclusive failure rejects with reasons; borderline non-duplicate evidence is atomically frozen in `pending_review` with zero reward. A separate bearer-token operator API may approve or deny that exact held pair, while the owner may withdraw it for retry.
 
 **Demo moment:** a seeded **reused + out-of-area** "fraud attempt" is visibly caught and rejected on stage (flagged by duplicate + geo), while a legit cleanup is accepted and moves the funded bar.
 
@@ -277,6 +281,7 @@ Both exist; they're the two layers in §5a. No remaining open question here.
 - Don't reintroduce multiple unrelated mission types — breadth is the enemy of a one-day build.
 - Don't let XP/points become the headline; the **funded, verified progress bar** is the emotional and technical centerpiece.
 - Lead the pitch with the **verified-impact escrow** mechanic, not "AI checks photos."
+- Keep human review exceptional and server-operated: no organizer/reviewer dashboard or fifth product route.
 
 ---
 
@@ -292,7 +297,8 @@ Both exist; they're the two layers in §5a. No remaining open question here.
 - [x] Must-have vs. mock vs. cut LOCKED (§9) — incl. reject-path handling + hardcoded demo user
 - [x] **Ideation + requirements refinement COMPLETE**
 - [x] Next.js scaffold + responsive four-screen UI implemented
-- [x] Seeded server-authoritative verification flow implemented (pass, reject, points, coupon, and funded-bar animation)
+- [x] Seeded server-authoritative verification flow implemented (pass, review, reject, points, coupon, and funded-bar animation)
+- [x] Pending review hardened with frozen evidence, token-authorized five-minute reads, atomic decisions, owner status/withdrawal, and no-reward holds
 - [x] pHash, EXIF/geo/time, composite verdict, upload validation, rate limiting, and idempotent demo finalization implemented
 - [x] Fetch-style task catalog, sponsor multiplier, points wallet, and illustrative seasonal tasks implemented
 - [x] Claude multimodal before/after analysis implemented with strict response parsing and timeout fallback

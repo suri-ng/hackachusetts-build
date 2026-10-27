@@ -1,269 +1,273 @@
 <div align="center">
   <img src="public/sprout-logo.png" alt="Sprout logo" width="110" />
   <h1>Sprout</h1>
-  <p><strong>Verified climate-action rewards platform built with Next.js, TypeScript, Supabase, and Claude Vision.</strong></p>
+  <p><strong>Verified climate-action rewards built with Next.js, TypeScript, Supabase, and Claude Vision.</strong></p>
   <p>
-    Turn local environmental action into proof sponsors can count.
-    </br></br>Try it out: https://hackachusetts-build.vercel.app/
+    Turn local environmental action into proof sponsors can count.<br /><br />
+    Try it: https://hackachusetts-build.vercel.app/
   </p>
 </div>
 
 ## Why Sprout
 
-Environmental programs often struggle to prove that funded actions actually happened.
+Environmental programs often struggle to prove that funded actions actually happened. Sprout connects sponsors and participants through a simple **mission → proof → verification → reward** workflow:
 
-Sprout connects sponsors and participants through a simple **mission → proof → verification → reward** workflow:
-
-- a sponsor backs a cleanup goal
-- a participant submits before-and-after photos
-- Sprout verifies the evidence
-- each accepted cleanup advances the campaign
-- participants earn points and rewards
+- a sponsor backs a cleanup goal;
+- a participant commits a before photo, completes the cleanup, and submits an after photo;
+- Sprout validates ownership, duplicate, location/time, and visual signals;
+- clear evidence passes, duplicate or conclusively weak evidence rejects, and borderline non-duplicate evidence enters protected review;
+- each approved cleanup advances the campaign and awards configured points exactly once.
 
 The result is an auditable link between individual action and sponsor-funded impact.
 
 ## Core features
 
-- **Before-and-after cleanup missions**
-  - participants commit a before photo, complete the cleanup, then submit an after photo
-  - the app guides users to keep landmarks and framing consistent
+- **Camera-first cleanup evidence**
+  - real before/after image capture with decoded-byte, format, dimension, pixel, and 10 MB validation;
+  - the before photo is committed first, then the user returns with a matching after photo;
+  - live mode hides demo fixtures and requests the rear camera on supported phones.
 
-- **AI-assisted verification**
-  - Claude compares both images and evaluates whether they show the same place and a meaningful cleanup
-  - the final PASS / REJECT decision is calculated by server-side policy rather than trusting the model alone
+- **AI-assisted, server-authoritative verification**
+  - a low-effort Claude Haiku request compares both private images together;
+  - the server combines Claude confidence with pHash and EXIF geo/time signals;
+  - the client cannot submit an authoritative outcome or reward instruction.
 
-- **Fraud and replay protection**
-  - perceptual image hashes detect reused or near-duplicate evidence
-  - EXIF location and capture time are used as additional integrity signals
-  - rejected submissions do not earn points or advance campaign progress
+- **Three-way integrity outcome**
+  - `pass`: atomically complete and award;
+  - `review`: freeze borderline, non-duplicate evidence without points or campaign progress;
+  - `reject`: protect the sponsor pool and let the owner retry where appropriate;
+  - duplicate evidence is always a hard reject and cannot be human-approved.
 
-- **Sponsor-funded progress**
-  - each newly verified cleanup advances the campaign by one unit
-  - the funded bar shows progress toward the sponsor threshold
+- **Secure exceptional human review**
+  - `/api/review` fails closed behind a server-only bearer token;
+  - live evidence is exposed only through read-only signed URLs that expire after five minutes;
+  - a generated `reviewId` binds approve, deny, and owner-withdraw actions to the exact held evidence;
+  - append-only audit rows survive later retries and seed resets;
+  - there is no organizer or reviewer dashboard.
 
-- **Points and rewards**
-  - verified actions earn campaign-configured points
-  - a user's first successful cleanup can unlock a café reward
-  - repeated verification cannot award the same submission twice
+- **Owner-visible recovery**
+  - Mission and Verify show pending and denied review status in the existing product routes;
+  - owners can withdraw a pending claim or submit a clearer after photo after denial;
+  - pending evidence cannot be replaced or re-verified.
 
-- **Impact proof trail**
-  - accepted actions appear in an impact ledger
-  - sponsor metrics show verified outcomes, campaign value, and remaining progress
+- **Atomic sponsor accounting and rewards**
+  - successful automatic and human approvals use database row locks and `counted` guards;
+  - campaign progress, points, verified counts, and first-cleanup coupon state update transactionally;
+  - repeated or concurrent approval cannot count the same submission twice.
 
-- **Private evidence + authentication**
-  - accounts are backed by Supabase Auth
-  - cleanup photos are stored in a private Supabase Storage bucket
-  - server-side identity checks prevent users from modifying another user's submission
+- **Private evidence and authentication**
+  - Supabase Auth provides cookie-backed accounts;
+  - evidence lives in a private Supabase Storage bucket;
+  - owner checks prevent users from reading or mutating another user’s submission;
+  - versioned consent covers Claude processing and exceptional authorized human inspection.
 
-- **Demo fallback mode**
-  - Sprout can run without live Supabase or Claude credentials
-  - seeded fixtures keep the full verification flow demonstrable offline
+- **Reliable demo fallback**
+  - the app runs without live Supabase or Claude credentials;
+  - the legitimate seeded flow deterministically awards points;
+  - demo unknown, foreign-owned, or pending-review submissions fail closed rather than minting fallback rewards.
 
 ## Technical highlights
 
-### 1) Server-authoritative verification pipeline
+### 1. Fixed verification pipeline
 
-Verification follows a fixed sequence:
+```text
+validate owner + state + image + rate
+  → perceptual duplicate check
+  → EXIF location/time soft scoring
+  → Claude before/after comparison
+  → server composite outcome: pass | review | reject
+```
 
-1. validate the submission
-2. check for duplicate evidence
-3. calculate location and time signals
-4. ask Claude to compare the photos
-5. calculate the final verdict
-6. award points and campaign progress only after a PASS
+Missing EXIF is a soft signal, not an automatic rejection. Duplicate evidence dominates every other signal and always rejects.
 
-The current score weights Claude visual confidence most heavily, with geographic and time signals contributing additional confidence.
+### 2. Evidence-bound review
 
-### 2) Perceptual duplicate detection
+A live review hold locks the submission, confirms the assessed `after_ref` is still current, stores the exact pHashes/metadata/verdict, and generates a unique `review_id`. Reviewer and owner actions must present that ID, so stale decisions cannot resolve a newer photo pair.
 
-Sprout uses Sharp to normalize images and generate a **64-bit perceptual average hash**.
+### 3. Atomic approval
 
-Hamming distance is then used to compare new evidence against previously accepted images and known blocked fingerprints.
+PostgreSQL functions lock the submission, campaign, and user records. Human approval of a held claim completes the exact evidence and applies campaign progress and rewards in one transaction. Exact replays return without awarding again.
 
-This catches resized or recompressed copies that ordinary file hashes would miss.
+### 4. Reset-safe audit history
 
-### 3) Atomic sponsor accounting
+`review_audit` stores held, approved, denied, and withdrawn events under stable submission/review UUIDs. It intentionally does not foreign-key active demo submissions, allowing canonical seed rows to be deleted and recreated without erasing history or blocking reset.
 
-Successful verification is finalized through a PostgreSQL function that updates:
+### 5. Live and demo isolation
 
-- the submission
-- campaign progress
-- the user's points
-- verified cleanup counts
-- first-cleanup reward state
-- accepted image hashes
-
-A `counted` guard prevents repeated or concurrent requests from crediting the same cleanup twice.
-
-### 4) Private evidence boundaries
-
-Uploaded cleanup photos are treated as private evidence.
-
-Supabase sessions determine the active user, uploads are scoped to that user, and raw evidence paths are handled only through server-side code.
-
-Public impact views expose the verified outcome without exposing private source photos.
-
-### 5) Live + demo runtime modes
-
-Sprout supports both:
-
-- a live Supabase + Claude workflow
-- a seeded local demo workflow
-
-If a live dependency fails, the app can fall back to isolated demo state without writing fake verification results into persistent sponsor data.
+A seeded result never mutates the persistent Supabase-funded ledger. Integration failures may switch the user workflow to isolated local demo state, while ownership, lifecycle, and malformed-input errors remain explicit 4xx responses.
 
 ## Tech stack
 
 | Layer | Tools |
 |---|---|
 | Frontend | Next.js 16, React 19, TypeScript |
-| Styling | Custom CSS |
+| Styling | Custom CSS, mobile-first responsive design |
 | Animation | Framer Motion, canvas-confetti |
 | Backend | Next.js Route Handlers |
 | Authentication | Supabase Auth |
 | Database | Supabase Postgres |
 | Storage | Private Supabase Storage |
-| AI verification | Anthropic Claude Vision |
+| AI verification | Anthropic Claude Haiku Vision |
 | Image processing | Sharp |
 | Metadata | exifr |
 | Testing | Vitest, Testing Library |
 
-## Architecture overview
+## Architecture
 
 ```text
-app/
-  page.tsx                 -> campaign dashboard
-  login/page.tsx           -> authentication
-  mission/page.tsx         -> cleanup mission
-  verify/page.tsx          -> before/after verification
-  impact/page.tsx          -> impact ledger
-
-  api/
-    campaign/route.ts      -> campaign snapshot
-    submissions/route.ts   -> create submission
-    upload-url/route.ts    -> retain private evidence
-    verify/route.ts        -> verification endpoint
-
-components/
-  home-client.tsx
-  mission-content.tsx
-  verify-client.tsx
-  impact-client.tsx
-  funded-bar.tsx
-
-lib/
-  pipeline.ts              -> verification pipeline
-  verdict.ts               -> verdict + funding logic
-  phash.ts                 -> duplicate detection
-  geotime.ts               -> EXIF scoring
-  claude.ts                -> visual assessment
-  services.ts              -> live/demo boundary
-  supabase-store.ts        -> persistent data layer
-
-supabase/
-  schema.sql
-  functions.sql
-  seed.sql
+Exactly four product routes
+  /  ·  /mission  ·  /verify  ·  /impact
+                    │
+                    ▼
+Owner-authenticated APIs
+  campaign · upload · submissions/withdraw · verify
+                    │
+         pass | review | reject
+          │       │       └─ reject/retry, no reward
+          │       └─ frozen hold, no reward
+          │
+          └──────────────┐
+                         ▼
+Bearer-authenticated /api/review (operator API only)
+  five-minute evidence links · approve · deny
+                         │
+                         ▼
+Supabase Postgres + private Storage
+  atomic finalization · review audit · funded progress
 ```
+
+Important files:
+
+- `components/verify-client.tsx` — capture, consent, outcomes, review status, and recovery
+- `lib/claude.ts` — image normalization and one Claude multimodal request
+- `lib/pipeline.ts` — fixed server-authoritative verification order
+- `lib/verdict.ts` — pass/review/reject policy
+- `lib/reviewer-auth.ts` — fail-closed, constant-time operator token validation
+- `lib/supabase-store.ts` — private evidence and durable review/reward operations
+- `lib/services.ts` — live/demo isolation and fallback selection
+- `supabase/schema.sql` — private schema, lifecycle, and reset-safe review audit
+- `supabase/functions.sql` — atomic finalization, hold, resolution, and withdrawal RPCs
 
 ## Local setup
 
-### 1) Requirements
+### Requirements
 
 - Node.js **20.9+**
 - npm
-- Supabase credentials for persistent auth/storage
-- Anthropic API key for live AI verification
+- Optional Supabase credentials for persistent auth/storage
+- Optional Anthropic API key for live AI verification
 
-### 2) Install dependencies
+### Install and run
 
 ```bash
 npm install
-```
-
-### 3) Run locally
-
-```bash
+cp .env.local.example .env.local
 npm run dev
 ```
 
-Then open `http://localhost:3000`.
+Open `http://localhost:3000`. Without external credentials, Sprout uses seeded demo data.
 
-Without external credentials, Sprout runs using seeded demo data.
-
-### 4) Configure live services
-
-```bash
-cp .env.local.example .env.local
-```
-
-Populate:
+### Configure live services
 
 ```env
+# Server-only Claude settings
 ANTHROPIC_API_KEY=
 ANTHROPIC_MODEL=
 
+# Supabase Auth and trusted server access
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_URL=
 SUPABASE_SERVICE_ROLE_KEY=
 
+# Server-only operator credential; leave blank to disable review
+SPROUT_REVIEW_TOKEN=
+# Optional server-owned audit label
+SPROUT_REVIEWER_ID=
+
 SPROUT_DATA_MODE=auto
 SPROUT_AI_MODE=auto
 ```
 
-Then apply:
+Security rules:
 
-```text
-supabase/schema.sql
-supabase/functions.sql
-```
+- Never prefix `ANTHROPIC_API_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SPROUT_REVIEW_TOKEN`, or `SPROUT_REVIEWER_ID` with `NEXT_PUBLIC_`.
+- Use a random review token of at least 32 characters and send it only in `Authorization: Bearer <token>`—never in a URL, browser storage, analytics, or logs.
+- Leaving `SPROUT_REVIEW_TOKEN` blank disables all review reads and mutations.
+- Request bodies cannot select reviewer identity; the server reads optional attribution from `SPROUT_REVIEWER_ID`.
+- Never commit `.env.local`.
 
-Optional demo seed:
+### Apply schema and seed
+
+Run these separately, in order, in the Supabase SQL editor:
+
+1. `supabase/schema.sql`
+2. `supabase/functions.sql`
+
+Then upload/reset canonical fixtures:
 
 ```bash
 npm run seed
 ```
 
-### 5) Run tests
+The seed command fails immediately if active-row cleanup cannot complete. Audit history retains stable UUIDs without blocking reset.
+
+## Human-review operator API
+
+There is no reviewer web page. Every request requires the configured bearer token.
+
+- `GET /api/review` lists current held claims. Live claims include newly generated read-only evidence URLs valid for five minutes.
+- `POST /api/review` accepts:
+
+```json
+{
+  "action": "approve",
+  "submissionId": "<uuid>",
+  "reviewId": "<uuid>"
+}
+```
+
+`action` may be `approve` or `deny`. Approval is atomic and idempotent. Denial awards nothing and reopens the original committed-before submission for a new after photo.
+
+## Validation
 
 ```bash
 npm test
-```
-
-Production build:
-
-```bash
 npm run build
 ```
 
-## Example user flows
+Current local validation: **61/61 tests pass** and the production build succeeds. SQL contracts are checked statically; apply both SQL files to a disposable Supabase project before production rollout because this workspace does not include a local PostgreSQL runtime.
 
-### Verified cleanup flow
-1. Open the featured cleanup mission.
-2. Submit a before photo.
-3. Complete the cleanup.
-4. Submit a matching after photo.
-5. Sprout checks duplicate, location, time, and visual signals.
-6. On PASS, the user earns points and the campaign advances.
-7. The verified action appears in the impact ledger.
+## Demo flows
 
-### Fraud-rejection flow
+### Legitimate cleanup
+
+1. Open the featured mission.
+2. Commit a before photo.
+3. Complete the cleanup and submit a matching after photo.
+4. Sprout checks duplicate, metadata, and visual signals.
+5. A pass awards points and moves sponsor progress exactly once.
+
+### Borderline review
+
+1. Borderline non-duplicate evidence enters `pending_review`.
+2. Points, coupon, and funded progress remain unchanged.
+3. An authorized operator may inspect the frozen pair using expiring links.
+4. Approval awards exactly once; denial or owner withdrawal permits a clearer after photo.
+
+### Fraud rejection
+
 1. Load intentionally reused evidence.
-2. Run the same verification pipeline.
-3. Duplicate signals trigger a rejection.
-4. No points or sponsor progress are awarded.
+2. Duplicate and location signals trigger rejection.
+3. No points or sponsor progress are awarded, and the attempt never enters review.
 
-## Future improvements
+## Honest boundaries and future improvements
 
-- support sponsor-created campaigns and missions
-- add sponsor dashboards and downloadable impact reports
-- integrate real funding and reward redemption
-- move rate limiting to a distributed store
-- add automatic evidence-retention policies
-- strengthen manipulation and near-duplicate detection
-- add end-to-end tests against staged live services
-- support environmental actions beyond photo-based cleanups
+- Sponsor names, offers, coupon, and money are illustrative; no real payment or redeemability is claimed.
+- AI plus human review raises the cost of cheating but is not fraud-proof.
+- Production still needs published evidence-retention/deletion policy, individual reviewer identities, token rotation/revocation, account recovery/deletion, and distributed rate limiting.
+- Future versions may support sponsor-created campaigns, downloadable impact reports, real reward redemption, and additional evidence-compatible environmental actions.
+- The current MVP intentionally has no sponsor, organizer, or reviewer dashboard.
 
 ## License
 

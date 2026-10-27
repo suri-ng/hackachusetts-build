@@ -15,6 +15,37 @@ const steps = [
 export function MissionContent({ data }: { data: CampaignPayload }) {
   const { campaign, user } = data;
   const reward = campaign.basePoints * campaign.pointsMultiplier;
+  const reviewStatus = data.reviewStatus;
+  const reviewPending = reviewStatus?.status === 'pending';
+  const reviewDenied = reviewStatus?.status === 'denied';
+  const statusTitle = reviewPending
+    ? 'Your cleanup is awaiting review.'
+    : reviewDenied
+      ? 'A reviewer requested a clearer after photo.'
+      : reviewStatus?.status === 'approved'
+        ? 'Your reviewed cleanup was approved.'
+        : data.pendingSubmissionId
+          ? 'Your before photo is secured.'
+          : 'Ready for your first photo.';
+  const statusDetail = reviewPending
+    ? 'Your evidence is frozen and no reward is issued until a decision. You can view it or withdraw to retry.'
+    : reviewDenied
+      ? 'Your original before photo is still secured. Take a new after photo to try again.'
+      : reviewStatus?.status === 'approved'
+        ? 'The funded unit and eligible rewards were committed exactly once.'
+        : data.pendingSubmissionId
+          ? 'Continue with the after photo for the fastest walkthrough.'
+          : 'Start by committing a before photo of the cleanup area.';
+  const primaryHref = reviewPending ? '/verify?review=1' : data.pendingSubmissionId ? '/verify' : '/verify?fresh=1';
+  const primaryLabel = reviewPending
+    ? 'View review status'
+    : reviewDenied
+      ? 'Take a new after photo'
+      : reviewStatus?.status === 'approved'
+        ? 'Start another cleanup'
+        : data.pendingSubmissionId
+          ? 'Continue cleanup'
+          : 'Start cleanup';
 
   return (
     <AppShell points={user.pointsBalance} mode={data.mode} user={user}>
@@ -40,10 +71,10 @@ export function MissionContent({ data }: { data: CampaignPayload }) {
               <div><span className="reward-icon"><Icon name="leaf" size={22} /></span><span><small>You earn</small><strong>{reward} points</strong></span></div>
               <div><span className="reward-icon earth"><Icon name="trend" size={22} /></span><span><small>Community gets</small><strong>+1 verified cleanup</strong></span></div>
             </div>
-            <div className="pending-callout"><span className="pending-check"><Icon name={data.pendingSubmissionId ? 'lock' : 'camera'} size={18} /></span><span><strong>{data.pendingSubmissionId ? 'Your before photo is secured.' : 'Ready for your first photo.'}</strong><small>{data.pendingSubmissionId ? 'Continue with the after photo for the fastest walkthrough.' : 'Start by committing a before photo of the cleanup area.'}</small></span></div>
+            <div className="pending-callout"><span className="pending-check"><Icon name={reviewPending ? 'clock' : reviewStatus?.status === 'approved' ? 'check' : data.pendingSubmissionId ? 'lock' : 'camera'} size={18} /></span><span><strong>{statusTitle}</strong><small>{statusDetail}</small></span></div>
             <div className="mission-actions">
-              <Link href="/verify" className="button button-primary button-large">{data.pendingSubmissionId ? 'Continue cleanup' : 'Start cleanup'} <Icon name="arrowRight" size={20} /></Link>
-              {data.pendingSubmissionId && <Link href="/verify?fresh=1" className="button button-quiet">Start from the beginning</Link>}
+              <Link href={primaryHref} className="button button-primary button-large">{primaryLabel} <Icon name="arrowRight" size={20} /></Link>
+              {data.pendingSubmissionId && !reviewPending && !reviewDenied && <Link href="/verify?fresh=1" className="button button-quiet">Start from the beginning</Link>}
             </div>
           </motion.div>
         </section>
@@ -72,7 +103,7 @@ export function MissionContent({ data }: { data: CampaignPayload }) {
           </div>
         </section>
 
-        <div className="mobile-sticky-action"><span><small>{campaign.pointsMultiplier}× boost</small><strong>{reward} points</strong></span><Link href="/verify" className="button button-primary">Continue <Icon name="arrowRight" size={18} /></Link></div>
+        <div className="mobile-sticky-action"><span><small>{reviewPending ? 'Review pending' : `${campaign.pointsMultiplier}× boost`}</small><strong>{reviewPending ? 'No reward yet' : `${reward} points`}</strong></span><Link href={primaryHref} className="button button-primary">{reviewPending ? 'View status' : 'Continue'} <Icon name="arrowRight" size={18} /></Link></div>
       </div>
     </AppShell>
   );

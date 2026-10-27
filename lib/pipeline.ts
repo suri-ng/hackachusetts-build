@@ -7,7 +7,7 @@ export interface PipelineSubmission {
   campaignId: string;
   beforeRef: string;
   afterRef: string | null;
-  state: 'before_committed' | 'complete';
+  state: 'before_committed' | 'complete' | 'pending_review';
   counted: boolean;
 }
 
@@ -51,6 +51,10 @@ export interface PipelineDeps {
     submission: PipelineSubmission,
     result: { confidence: number; rationale: string; reasons: string[] },
   ): Promise<{ progress: number; unlockedValue: number; pointsBalance: number }>;
+  recordReview(
+    submission: PipelineSubmission,
+    result: { confidence: number; rationale: string; reasons: string[] },
+  ): Promise<{ progress: number; unlockedValue: number; pointsBalance: number; reviewId: string }>;
 }
 
 export class PipelineError extends Error {
@@ -98,6 +102,17 @@ export async function runVerification(
     throw new PipelineError('We could not find that cleanup.', 'submission_not_found', 404);
   }
 
+  if (submission.state === 'pending_review') {
+    throw new PipelineError(
+      'This cleanup is awaiting review. Withdraw it before submitting new evidence.',
+      'invalid_submission',
+      409,
+    );
+  }
+  if (submission.state === 'complete' && !submission.counted) {
+    throw new PipelineError('This cleanup has an invalid state.', 'invalid_submission', 409);
+  }
+
   // Fixed order: validation/rate gate → duplicate → geo/time → assessment → verdict.
   await deps.validateSubmission(submission);
   if (!(await deps.allowAttempt(submission.userId))) {
@@ -118,7 +133,34 @@ export async function runVerification(
     duplicateFlag,
   });
 
-  if (!verdict.pass) {
+  // Borderline, non-fraud claims are HELD FOR REVIEW: no points, bar unchanged.
+  if (verdict.outcome === 'review') {
+    const unchanged = await deps.recordReview(submission, {
+      confidence: verdict.confidence,
+      rationale: verdict.rationale,
+      reasons: verdict.reasons,
+    });
+    return {
+      outcome: 'review',
+      pass: false,
+      confidence: verdict.confidence,
+      rationale: verdict.rationale,
+      reasons: verdict.reasons,
+      assessor: assessment.source,
+      dataMode: deps.dataMode,
+      previousProgress: unchanged.progress,
+      progress: unchanged.progress,
+      unlockedValue: unchanged.unlockedValue,
+      poolUnlocked: false,
+      pointsAwarded: 0,
+      pointsBalance: unchanged.pointsBalance,
+      couponAwarded: false,
+      wasCounted: false,
+      reviewId: unchanged.reviewId,
+    };
+  }
+
+  if (verdict.outcome === 'reject') {
     const rationale = rejectionRationale(verdict.reasons, assessment.rationale);
     const unchanged = await deps.recordReject(submission, {
       confidence: verdict.confidence,
@@ -126,6 +168,7 @@ export async function runVerification(
       reasons: verdict.reasons,
     });
     return {
+      outcome: 'reject',
       pass: false,
       confidence: verdict.confidence,
       rationale,
@@ -148,6 +191,7 @@ export async function runVerification(
     rationale: assessment.rationale,
   });
   return {
+    outcome: 'pass',
     pass: true,
     confidence: verdict.confidence,
     rationale: assessment.rationale,

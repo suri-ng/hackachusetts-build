@@ -11,13 +11,19 @@ export interface VerdictSignals {
   duplicateFlag: boolean;
 }
 
+/** Three-way server outcome. `pass` is kept as a convenience boolean. */
+export type VerdictOutcome = 'pass' | 'review' | 'reject';
+
 export interface Verdict {
+  /** Final decision. 'review' holds the claim for a human instead of awarding. */
+  outcome: VerdictOutcome;
+  /** True only when outcome === 'pass'. Preserved for existing callers. */
   pass: boolean;
-  /** Weighted confidence surfaced on both outcomes. */
+  /** Weighted confidence surfaced on every outcome. */
   confidence: number;
-  /** A non-empty, single-line explanation shown on both outcomes. */
+  /** A non-empty, single-line explanation shown on every outcome. */
   rationale: string;
-  /** Contributing reasons, populated only on rejection. */
+  /** Contributing reasons, populated on review and reject. */
   reasons: string[];
 }
 
@@ -30,6 +36,10 @@ export const VERDICT_POLICY = Object.freeze({
   passThreshold: 0.6,
   weakGeoThreshold: 0.5,
   weakTimeThreshold: 0.5,
+  // Below this Claude confidence a claim is a clear reject. Between this and
+  // claudeMinimum (or when a soft signal is weak but Claude is otherwise
+  // plausible) the claim is HELD FOR REVIEW instead of rejected outright.
+  hardRejectConfidence: 0.4,
 });
 
 const DEFAULT_MILESTONES = Object.freeze([25, 50, 75, 100]);
@@ -79,6 +89,19 @@ function rejectionRationale(reasons: VerdictReason[]): string {
     .join('; ')}.`;
 }
 
+function reviewRationale(reasons: VerdictReason[]): string {
+  const phrases: Record<VerdictReason, string> = {
+    duplicate_photo: 'a photo may match earlier evidence',
+    low_confidence: 'the visual evidence is borderline',
+    out_of_area: 'the location signal is weak',
+    time_mismatch: 'the photo timestamps are borderline',
+  };
+  const detail = reasons.length
+    ? reasons.map((reason) => phrases[reason]).join('; ')
+    : 'the signals are inconclusive';
+  return `This cleanup is held for review because ${detail}. No points were awarded yet.`;
+}
+
 /**
  * Computes the server-authoritative verdict from normalized anti-fraud signals.
  * Finite scores are clamped to [0, 1]. Non-finite scores are rejected as
@@ -122,13 +145,26 @@ export function compositeVerdict(signals: VerdictSignals): Verdict {
     contributors.push('time_mismatch');
   }
 
-  const pass =
-    !signals.duplicateFlag &&
+  const reasons: VerdictReason[] =
+    contributors.length > 0 ? contributors : ['low_confidence'];
+
+  // A known duplicate is a hard reject and never eligible for review.
+  if (signals.duplicateFlag) {
+    return {
+      outcome: 'reject',
+      pass: false,
+      confidence,
+      rationale: rejectionRationale(reasons),
+      reasons,
+    };
+  }
+
+  const clearPass =
     claudeConfidence >= VERDICT_POLICY.claudeMinimum &&
     confidence >= VERDICT_POLICY.passThreshold;
-
-  if (pass) {
+  if (clearPass) {
     return {
+      outcome: 'pass',
       pass: true,
       confidence,
       rationale: 'Cleanup evidence meets the verification threshold.',
@@ -136,15 +172,23 @@ export function compositeVerdict(signals: VerdictSignals): Verdict {
     };
   }
 
-  // With the current policy, every threshold failure has a contributor. Keep a
-  // defensive fallback so a future threshold-only policy still explains a reject.
-  const reasons: VerdictReason[] =
-    contributors.length > 0 ? contributors : ['low_confidence'];
+  // Clear reject: the visual evidence is well below the bar.
+  if (claudeConfidence < VERDICT_POLICY.hardRejectConfidence) {
+    return {
+      outcome: 'reject',
+      pass: false,
+      confidence,
+      rationale: rejectionRationale(reasons),
+      reasons,
+    };
+  }
 
+  // Borderline and non-duplicate: hold for a human instead of rejecting.
   return {
+    outcome: 'review',
     pass: false,
     confidence,
-    rationale: rejectionRationale(reasons),
+    rationale: reviewRationale(reasons),
     reasons,
   };
 }

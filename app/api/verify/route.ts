@@ -1,8 +1,11 @@
 import { NextResponse } from 'next/server';
+import { AI_CONSENT_VERSION, isUuid } from '@/lib/domain';
+import { DemoOwnershipError, DemoTransitionError } from '@/lib/demo-store';
 import { PipelineError } from '@/lib/pipeline';
 import { shouldUseLiveStack } from '@/lib/runtime-mode';
 import { verifyWithFallback } from '@/lib/services';
 import { getRequestIdentity } from '@/lib/supabase/server';
+import { ResourceOwnershipError, ReviewTransitionError } from '@/lib/supabase-store';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -11,6 +14,7 @@ type VerifyBody = {
   submissionId?: unknown;
   afterRef?: unknown;
   aiConsent?: unknown;
+  aiConsentVersion?: unknown;
 };
 
 export async function POST(request: Request): Promise<NextResponse> {
@@ -24,7 +28,7 @@ export async function POST(request: Request): Promise<NextResponse> {
     return NextResponse.json({ error: 'Invalid JSON body.' }, { status: 400 });
   }
 
-  if (typeof body.submissionId !== 'string' || body.submissionId.length < 8) {
+  if (!isUuid(body.submissionId)) {
     return NextResponse.json({ error: 'A valid submission is required.' }, { status: 400 });
   }
   if (
@@ -38,7 +42,7 @@ export async function POST(request: Request): Promise<NextResponse> {
   if (
     body.afterRef.startsWith('supabase://cleanup-photos/') &&
     shouldUseLiveStack() &&
-    body.aiConsent !== true
+    (body.aiConsent !== true || body.aiConsentVersion !== AI_CONSENT_VERSION)
   ) {
     return NextResponse.json(
       {
@@ -61,9 +65,18 @@ export async function POST(request: Request): Promise<NextResponse> {
         { status: error.status },
       );
     }
+    if (error instanceof DemoOwnershipError || error instanceof ResourceOwnershipError) {
+      return NextResponse.json({ error: error.message }, { status: 403 });
+    }
+    if (error instanceof DemoTransitionError || error instanceof ReviewTransitionError) {
+      return NextResponse.json(
+        { error: error.message, code: 'review_conflict' },
+        { status: 409 },
+      );
+    }
     return NextResponse.json(
-      { error: 'Verification could not finish. Try again.' },
-      { status: 400 },
+      { error: 'Verification is temporarily unavailable. Try again.' },
+      { status: 503 },
     );
   }
 }
